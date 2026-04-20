@@ -1,8 +1,3 @@
-"""
-Export module — save ASCII as .txt, .html, and full MP4 video.
-All heavy operations run on background QThreads with progress/cancel.
-"""
-
 import os
 import cv2
 import numpy as np
@@ -16,7 +11,7 @@ from ascii_renderer import (
 
 
 class ExportVideoThread(QThread):
-    """Export every frame as plain-text ASCII to a .txt file."""
+    
 
     progress = pyqtSignal(int)
     finished_ok = pyqtSignal(str)
@@ -99,11 +94,6 @@ class ExportVideoThread(QThread):
 
 
 class ExportMP4Thread(QThread):
-    """
-    Core converter: reads source MP4, renders each frame as colored ASCII art
-    image, writes to output MP4 via cv2.VideoWriter.
-    Result is a real video file where every pixel is ASCII art.
-    """
 
     progress = pyqtSignal(int)
     finished_ok = pyqtSignal(str)
@@ -159,7 +149,7 @@ class ExportMP4Thread(QThread):
             if self._aspect_lock and va > 0:
                 ascii_h = max(1, int(ascii_w / va * 0.5))
 
-            # Render first frame to determine output dimensions
+           
             ret, first_frame = cap.read()
             if not ret:
                 self.error_occurred.emit("Cannot read first frame.")
@@ -172,7 +162,7 @@ class ExportMP4Thread(QThread):
             first_img = render_to_cv2(chars, colors, self._font_size)
             out_h, out_w = first_img.shape[:2]
 
-            # Ensure dimensions are even (required by most codecs)
+            
             out_w = out_w if out_w % 2 == 0 else out_w + 1
             out_h = out_h if out_h % 2 == 0 else out_h + 1
 
@@ -182,7 +172,7 @@ class ExportMP4Thread(QThread):
                 self.error_occurred.emit("Failed to create output video writer.")
                 return
 
-            # Write first frame (pad if needed)
+           
             padded = self._pad_frame(first_img, out_w, out_h)
             writer.write(padded)
             self.progress.emit(1)
@@ -227,16 +217,13 @@ class ExportMP4Thread(QThread):
 
     @staticmethod
     def _pad_frame(frame: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
-        """Pad frame to exact target dimensions if needed."""
+       
         h, w = frame.shape[:2]
         if w == target_w and h == target_h:
             return frame
         padded = np.full((target_h, target_w, 3), 17, dtype=np.uint8)
         padded[:h, :w] = frame
         return padded
-
-
-# ── Single-frame helpers ──────────────────────────────────────────────
 
 
 def save_current_frame_txt(chars_2d: np.ndarray, output_path: str):
@@ -252,7 +239,7 @@ def save_current_frame_html(
     output_path: str,
     font_size: int = 8,
 ):
-    """Write a single rendered frame as a standalone HTML document."""
+   
     html = frame_to_html(chars_2d, colors_rgb, font_size)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
@@ -271,7 +258,7 @@ def export_full_html(
     font_size: int,
     aspect_lock: bool,
 ):
-    """Render a specific frame from a video and export as colored HTML."""
+   
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise IOError(f"Cannot open: {video_path}")
