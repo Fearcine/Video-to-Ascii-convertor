@@ -20,7 +20,7 @@ Download the latest release and run VideoToASCII.exe. No Python required.
 
 ### Build
 
-    build_exe.bat
+    build.bat
 
 ---
 
