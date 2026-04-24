@@ -1,36 +1,13 @@
-"""
-ASCII Rendering Engine — NumPy vectorized, zero Python pixel loops.
-Returns compact numpy arrays. Renders to PIL images for MP4 export.
-"""
-
 import numpy as np
 import cv2
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image
+from glyph_atlas import get_atlas
 
 CHAR_SETS = {
     "Standard": " .,:;+*?%S#@",
     "Dense": " ░▒▓█",
     "Simple": " █",
 }
-
-_font_cache: dict[int, ImageFont.FreeTypeFont] = {}
-
-
-def _get_font(size: int) -> ImageFont.FreeTypeFont:
-    """Get a monospace PIL font at the given point size, cached."""
-    if size in _font_cache:
-        return _font_cache[size]
-    font = None
-    for name in ("consola.ttf", "cour.ttf", "lucon.ttf"):
-        try:
-            font = ImageFont.truetype(name, size)
-            break
-        except (OSError, IOError):
-            continue
-    if font is None:
-        font = ImageFont.load_default()
-    _font_cache[size] = font
-    return font
 
 
 def frame_to_ascii(
@@ -83,53 +60,67 @@ def frame_to_ascii(
     return chars_2d, colors
 
 
+def image_to_ascii(
+    image_path: str,
+    width: int,
+    char_set: str,
+    color_mode: str,
+    intensity: int,
+    mono_color: tuple[int, int, int] = (255, 255, 255),
+    aspect_ratio: float | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Load an image and convert to ASCII representation.
+
+    Args:
+        image_path: Path to the image file.
+        width: Target width in characters.
+        char_set: Character set string.
+        color_mode: "Colored", "Grayscale", or "Monochrome".
+        intensity: Color intensity (0-100).
+        mono_color: RGB tuple for monochrome mode.
+        aspect_ratio: If provided, compute height from width using this ratio.
+
+    Returns:
+        chars_2d, colors_rgb — same as frame_to_ascii.
+    """
+    frame_bgr = cv2.imread(image_path, cv2.IMREAD_COLOR)
+    if frame_bgr is None:
+        raise IOError(f"Cannot load image: {image_path}")
+
+    if aspect_ratio is None:
+        h_img, w_img = frame_bgr.shape[:2]
+        aspect_ratio = w_img / h_img if h_img > 0 else 1.77
+
+    height = max(1, int(width / aspect_ratio * 0.5))
+
+    return frame_to_ascii(frame_bgr, width, height, char_set, color_mode, intensity, mono_color)
+
+
+def render_to_rgb(
+    chars_2d: np.ndarray,
+    colors_rgb: np.ndarray,
+    font_size: int = 12,
+    bg_color: tuple[int, int, int] = (17, 17, 17),
+    char_set: str = " .,:;+*?%S#@",
+    out_buf: np.ndarray | None = None,
+) -> np.ndarray:
+    
+    # Collect unique chars from the array to build minimal charset for atlas
+    atlas = get_atlas(char_set, font_size)
+    return atlas.compose_frame(chars_2d, colors_rgb, bg_color, out_buf)
+
+
 def render_to_pil(
     chars_2d: np.ndarray,
     colors_rgb: np.ndarray,
     font_size: int = 12,
     bg_color: tuple[int, int, int] = (17, 17, 17),
+    char_set: str = " .,:;+*?%S#@",
 ) -> Image.Image:
-    """
-    Render colored ASCII art onto a PIL Image.
-    Batches consecutive same-color characters per row for speed.
-    """
-    h, w = chars_2d.shape
-    font = _get_font(font_size)
-
-    # Cell dimensions from reference character
-    ref_bbox = font.getbbox("M")
-    cell_w = max(1, ref_bbox[2] - ref_bbox[0])
-    ascent, descent = font.getmetrics()
-    cell_h = max(1, ascent + descent)
-
-    img = Image.new("RGB", (cell_w * w, cell_h * h), bg_color)
-    draw = ImageDraw.Draw(img)
-
-    for y in range(h):
-        row_colors = colors_rgb[y]  # (w, 3)
-        row_chars = chars_2d[y]  # (w,)
-        py = y * cell_h
-
-        # Detect color-run boundaries with numpy
-        if w > 1:
-            diffs = np.any(row_colors[1:] != row_colors[:-1], axis=1)
-            breaks = np.where(diffs)[0] + 1
-            boundaries = np.empty(len(breaks) + 2, dtype=np.intp)
-            boundaries[0] = 0
-            boundaries[1:-1] = breaks
-            boundaries[-1] = w
-        else:
-            boundaries = np.array([0, w], dtype=np.intp)
-
-        for i in range(len(boundaries) - 1):
-            s = int(boundaries[i])
-            e = int(boundaries[i + 1])
-            color = (int(row_colors[s, 0]), int(row_colors[s, 1]), int(row_colors[s, 2]))
-            text = "".join(row_chars[s:e].tolist())
-            if text.strip():
-                draw.text((s * cell_w, py), text, fill=color, font=font)
-
-    return img
+    
+    rgb_array = render_to_rgb(chars_2d, colors_rgb, font_size, bg_color, char_set)
+    return Image.fromarray(rgb_array, "RGB")
 
 
 def render_to_cv2(
@@ -137,14 +128,16 @@ def render_to_cv2(
     colors_rgb: np.ndarray,
     font_size: int = 12,
     bg_color: tuple[int, int, int] = (17, 17, 17),
+    char_set: str = " .,:;+*?%S#@",
+    out_buf: np.ndarray | None = None,
 ) -> np.ndarray:
-    """Render ASCII art and return a BGR numpy array for cv2.VideoWriter."""
-    pil_img = render_to_pil(chars_2d, colors_rgb, font_size, bg_color)
-    return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+   
+    rgb = render_to_rgb(chars_2d, colors_rgb, font_size, bg_color, char_set, out_buf)
+    return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
 
 def frame_to_plain_text(chars_2d: np.ndarray) -> str:
-    """Convert character array to plain text string."""
+    
     lines = []
     for y in range(chars_2d.shape[0]):
         lines.append("".join(chars_2d[y].tolist()))
@@ -156,7 +149,7 @@ def frame_to_html(
     colors_rgb: np.ndarray,
     font_size: int = 8,
 ) -> str:
-    """Generate a standalone HTML document with inline-colored characters."""
+    
     h, w = chars_2d.shape
     parts = [
         '<!DOCTYPE html>\n<html>\n<head><meta charset="utf-8"><title>ASCII Art</title></head>\n',

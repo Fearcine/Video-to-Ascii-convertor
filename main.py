@@ -1,7 +1,7 @@
 """
 VideoToASCII — Main application entry point.
 Full desktop GUI: left control panel + right QImage-based ASCII preview.
-Optimized: debounced settings, QImage preview, MP4 export.
+Optimized: glyph atlas rendering, buffer reuse, MP4 export, image-to-ASCII.
 """
 
 import sys
@@ -43,14 +43,16 @@ from export import (
     save_current_frame_html,
     export_full_html,
 )
-from ascii_renderer import CHAR_SETS
+from ascii_renderer import CHAR_SETS, image_to_ascii, render_to_rgb
+from glyph_atlas import get_atlas
 import numpy as np
+import cv2
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("VideoToASCII — Video to Colored ASCII Art")
+        self.setWindowTitle("VideoToASCII — Video & Image to Colored ASCII Art")
         self._settings = load_settings()
         self.resize(
             self._settings.get("window_width", 1400),
@@ -59,6 +61,8 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(900, 600)
 
         self._video_path = self._settings.get("last_video", "")
+        self._image_path = ""
+        self._mode = "video"  # "video" or "image"
         self._current_chars: np.ndarray | None = None
         self._current_colors: np.ndarray | None = None
         self._current_frame_no = 0
@@ -125,16 +129,26 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(4)
 
-        # Upload
-        self.btn_upload = QPushButton("📁  Upload Video")
+        # Upload buttons
+        upload_row = QHBoxLayout()
+        self.btn_upload = QPushButton("📁  Video")
         self.btn_upload.setStyleSheet(
             "QPushButton { background: #0f3460; font-size: 13px; padding: 10px; }"
             "QPushButton:hover { background: #1a5276; border-color: #5dade2; }"
         )
         self.btn_upload.clicked.connect(self._on_upload)
-        left_layout.addWidget(self.btn_upload)
+        upload_row.addWidget(self.btn_upload)
 
-        self.lbl_filename = QLabel("No video loaded")
+        self.btn_upload_image = QPushButton("📷  Image")
+        self.btn_upload_image.setStyleSheet(
+            "QPushButton { background: #1b4332; font-size: 13px; padding: 10px; }"
+            "QPushButton:hover { background: #2d6a4f; border-color: #52b788; }"
+        )
+        self.btn_upload_image.clicked.connect(self._on_upload_image)
+        upload_row.addWidget(self.btn_upload_image)
+        left_layout.addLayout(upload_row)
+
+        self.lbl_filename = QLabel("No file loaded")
         self.lbl_filename.setWordWrap(True)
         self.lbl_filename.setStyleSheet("color: #888; font-size: 11px; padding: 2px;")
         left_layout.addWidget(self.lbl_filename)
@@ -298,6 +312,14 @@ class MainWindow(QMainWindow):
         self.btn_export_mp4.clicked.connect(self._on_export_mp4)
         out_layout.addWidget(self.btn_export_mp4)
 
+        self.btn_export_png = QPushButton("🖼️  Export as ASCII PNG")
+        self.btn_export_png.setStyleSheet(
+            "QPushButton { background: #1b4332; font-size: 12px; }"
+            "QPushButton:hover { background: #2d6a4f; border-color: #52b788; }"
+        )
+        self.btn_export_png.clicked.connect(self._on_export_png)
+        out_layout.addWidget(self.btn_export_png)
+
         self.btn_save_video = QPushButton("💾  Save ASCII Text (.txt)")
         self.btn_save_video.clicked.connect(self._on_save_video)
         out_layout.addWidget(self.btn_save_video)
@@ -439,6 +461,9 @@ class MainWindow(QMainWindow):
         """Called after debounce timer expires."""
         self._push_settings_to_thread()
         self._persist_settings()
+        # Re-render image if in image mode
+        if self._mode == "image" and self._image_path:
+            self._render_image()
 
     # ── Slots ──────────────────────────────────────────────────────────
 
@@ -450,9 +475,100 @@ class MainWindow(QMainWindow):
         if path:
             self._load_video(path)
 
+    def _on_upload_image(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Image File", "",
+            "Image Files (*.png *.jpg *.jpeg *.bmp *.webp *.tiff);;All Files (*)",
+        )
+        if path:
+            self._load_image(path)
+
+    def _load_image(self, path: str):
+        """Load an image and render it as ASCII art."""
+        self._image_path = path
+        self._video_path = ""
+        self._mode = "image"
+        self.lbl_filename.setText(f"🖼️ {os.path.basename(path)}")
+
+        # Hide video-only controls
+        self.btn_play.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+        self.slider_seek.setEnabled(False)
+        self.cmb_speed.setEnabled(False)
+        self.btn_export_mp4.setEnabled(False)
+        self.btn_save_video.setEnabled(False)
+        self.btn_export_png.setEnabled(True)
+
+        # Stop any video playback
+        self._render.stop()
+
+        # Render the image
+        self._render_image()
+        self._persist_settings()
+
+    def _render_image(self):
+        """Render the loaded image as ASCII art and display in preview."""
+        if not self._image_path or not os.path.isfile(self._image_path):
+            return
+
+        try:
+            img_bgr = cv2.imread(self._image_path, cv2.IMREAD_COLOR)
+            if img_bgr is None:
+                QMessageBox.warning(self, "Error", f"Cannot load image: {self._image_path}")
+                return
+
+            h_img, w_img = img_bgr.shape[:2]
+            aspect = w_img / h_img if h_img > 0 else 1.77
+
+            w = self.slider_width.value()
+            h = max(1, int(w / aspect * 0.5))
+
+            chars_2d, colors_rgb = image_to_ascii(
+                self._image_path, w,
+                self._get_char_set(), self._get_color_mode(),
+                self.slider_intensity.value(), self._mono_color,
+                aspect_ratio=aspect,
+            )
+
+            self._current_chars = chars_2d
+            self._current_colors = colors_rgb
+
+            # Compose preview image via glyph atlas
+            font_px = 10 if w <= 150 else (7 if w <= 300 else (5 if w <= 500 else 4))
+            atlas = get_atlas(self._get_char_set(), font_px)
+            rgb_array = atlas.compose_frame(chars_2d, colors_rgb, (14, 14, 14))
+
+            qimg = QImage(
+                rgb_array.data, rgb_array.shape[1], rgb_array.shape[0],
+                rgb_array.strides[0], QImage.Format.Format_RGB888,
+            ).copy()
+
+            self.preview.update_image(qimg)
+            self.status_bar.showMessage(
+                f"  🖼️ {os.path.basename(self._image_path)}  |  "
+                f"{w}×{h} chars  |  Image mode"
+            )
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Image render error: {e}")
+
     def _load_video(self, path: str):
         self._video_path = path
+        self._image_path = ""
+        self._mode = "video"
         self.lbl_filename.setText(os.path.basename(path))
+
+        # Re-enable video controls
+        self.btn_play.setEnabled(True)
+        self.btn_stop.setEnabled(True)
+        self.slider_seek.setEnabled(True)
+        self.cmb_speed.setEnabled(True)
+        self.btn_export_mp4.setEnabled(True)
+        self.btn_save_video.setEnabled(True)
+        self.btn_export_png.setEnabled(True)
+
+        # Force aspect lock on video load
+        self.chk_aspect.setChecked(True)
+
         self._render.load_video(path)
         QTimer.singleShot(500, self._update_video_info)
         self._persist_settings()
@@ -614,6 +730,32 @@ class MainWindow(QMainWindow):
         progress.canceled.connect(self._export_thread.cancel)
         self._export_thread.finished.connect(progress.close)
         self._export_thread.start()
+
+    # ── Export: PNG ────────────────────────────────────────────────────
+
+    def _on_export_png(self):
+        if self._current_chars is None:
+            QMessageBox.information(self, "No Frame", "No frame to export. Load a video or image first.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export ASCII PNG", "", "PNG Image (*.png)"
+        )
+        if not path:
+            return
+
+        try:
+            font_size = self.slider_fontsize.value()
+            atlas = get_atlas(self._get_char_set(), font_size)
+            rgb_frame = atlas.compose_frame(
+                self._current_chars, self._current_colors, (17, 17, 17)
+            )
+            # Convert RGB to BGR for cv2.imwrite
+            bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
+            cv2.imwrite(path, bgr_frame)
+            QMessageBox.information(self, "Saved", f"ASCII PNG saved to:\n{path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Export Error", str(e))
 
     # ── Export: TXT ────────────────────────────────────────────────────
 

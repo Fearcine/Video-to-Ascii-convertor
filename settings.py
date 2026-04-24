@@ -1,8 +1,3 @@
-"""
-Settings persistence — saves/loads all UI state to settings.json.
-File is stored next to the executable (or script).
-"""
-
 import json
 import os
 import sys
@@ -33,7 +28,7 @@ def _settings_path() -> str:
 
 
 def load_settings() -> dict:
-    """Load settings from JSON file, falling back to defaults for missing keys."""
+    
     path = _settings_path()
     settings = dict(_DEFAULTS)
     if os.path.isfile(path):
@@ -50,7 +45,7 @@ def load_settings() -> dict:
 
 
 def save_settings(settings: dict):
-    """Persist current settings to disk. Silently ignores write errors."""
+    
     path = _settings_path()
     try:
         with open(path, "w", encoding="utf-8") as f:

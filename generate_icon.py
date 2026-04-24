@@ -1,8 +1,3 @@
-"""
-Generate a minimal icon.ico for VideoToASCII using Pillow.
-Creates a dark gradient icon with '>_' terminal symbol.
-"""
-
 from PIL import Image, ImageDraw, ImageFont
 import os
 
@@ -43,14 +38,14 @@ def generate_icon(output_path: str = "icon.ico"):
         tx = (size - tw) // 2
         ty = (size - th) // 2
 
-        # Shadow
+    
         draw.text((tx + 1, ty + 1), text, fill=(0, 0, 0, 160), font=font)
-        # Main text
+       
         draw.text((tx, ty), text, fill=(79, 195, 247, 255), font=font)
 
         images.append(img)
 
-    # Save as .ico with multiple sizes
+    
     images[0].save(
         output_path,
         format="ICO",
