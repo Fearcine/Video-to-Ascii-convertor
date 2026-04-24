@@ -1,16 +1,11 @@
-"""
-Video decode + ASCII render thread.
-Decodes frames, renders to ASCII, paints colored QImage, emits to UI.
-All rendering happens here — the UI thread just blits the finished image.
-"""
-
 import time
 import threading
 import numpy as np
 import cv2
 from PyQt6.QtCore import QThread, pyqtSignal
-from PyQt6.QtGui import QImage, QPainter, QFont, QFontMetrics, QColor
+from PyQt6.QtGui import QImage
 from ascii_renderer import frame_to_ascii
+from glyph_atlas import get_atlas
 
 
 class RenderThread(QThread):
@@ -41,18 +36,10 @@ class RenderThread(QThread):
         self._speed = 1.0
         self._aspect_lock = True
         self._video_aspect = 1.77
-
-        # Frame-skip flag: UI sets True after consuming a frame
         self._frame_consumed = True
-
-        # QFont for preview rendering (initialized lazily in thread)
-        self._qfont: QFont | None = None
-        self._char_w = 5
-        self._char_h = 10
-        self._ascent = 8
+        self._out_buf: np.ndarray | None = None
         self._preview_font_px = 0
 
-    # ── public API (called from main thread) ──────────────────────────
 
     def load_video(self, path: str):
         with self._lock:
@@ -122,6 +109,8 @@ class RenderThread(QThread):
                 self._speed = speed
             if aspect_lock is not None:
                 self._aspect_lock = aspect_lock
+            # Invalidate output buffer when settings change
+            self._out_buf = None
 
     def shutdown(self):
         with self._lock:
@@ -130,34 +119,18 @@ class RenderThread(QThread):
             self._playing = False
         self.wait(5000)
 
-    # ── QImage preview font ──────────────────────────────────────────
+   
 
-    def _ensure_preview_font(self, ascii_width: int):
-        """Pick a pixel size for the preview font based on character width."""
+    def _get_preview_font_px(self, ascii_width: int) -> int:
+        
         if ascii_width <= 150:
-            px = 10
+            return 10
         elif ascii_width <= 300:
-            px = 7
+            return 7
         elif ascii_width <= 500:
-            px = 5
+            return 5
         else:
-            px = 4
-
-        if px == self._preview_font_px and self._qfont is not None:
-            return
-
-        self._preview_font_px = px
-        self._qfont = QFont("Consolas")
-        self._qfont.setPixelSize(px)
-        self._qfont.setStyleHint(QFont.StyleHint.Monospace)
-        self._qfont.setFixedPitch(True)
-
-        fm = QFontMetrics(self._qfont)
-        self._char_w = max(1, fm.horizontalAdvance("M"))
-        self._char_h = max(1, fm.height())
-        self._ascent = fm.ascent()
-
-    # ── thread main ──────────────────────────────────────────────────
+            return 4
 
     def run(self):
         while True:
@@ -284,58 +257,34 @@ class RenderThread(QThread):
             self.error_occurred.emit(f"Render error: {e}")
             return
 
-        # Paint QImage for preview
-        qimg = self._paint_qimage(chars_2d, colors_rgb)
+        # Compose QImage via glyph atlas (replaces old QPainter per-char loop)
+        font_px = self._get_preview_font_px(w)
+        atlas = get_atlas(cs, font_px)
+
+        # Reuse output buffer if dimensions match
+        img_h = h * atlas.cell_h
+        img_w = w * atlas.cell_w
+        if (self._out_buf is not None and 
+            self._out_buf.shape == (img_h, img_w, 3)):
+            out_buf = self._out_buf
+        else:
+            out_buf = np.full((img_h, img_w, 3), 14, dtype=np.uint8)
+            self._out_buf = out_buf
+
+        rgb_array = atlas.compose_frame(chars_2d, colors_rgb, (14, 14, 14), out_buf)
+
+        # Wrap numpy array as QImage (zero-copy via buffer reference)
+        qimg = QImage(
+            rgb_array.data,
+            rgb_array.shape[1],
+            rgb_array.shape[0],
+            rgb_array.strides[0],
+            QImage.Format.Format_RGB888,
+        )
+        # Must copy because rgb_array may be reused — QImage doesn't own the data
+        qimg = qimg.copy()
 
         render_ms = (time.perf_counter() - t0) * 1000.0
 
         self._frame_consumed = False
         self.frame_rendered.emit(qimg, chars_2d, colors_rgb, cur, total, render_ms)
-
-    def _paint_qimage(self, chars_2d: np.ndarray, colors_rgb: np.ndarray) -> QImage:
-        """Paint colored ASCII characters onto a QImage using QPainter."""
-        h, w = chars_2d.shape
-        self._ensure_preview_font(w)
-
-        cw = self._char_w
-        ch = self._char_h
-        ascent = self._ascent
-
-        img_w = cw * w
-        img_h = ch * h
-
-        qimg = QImage(img_w, img_h, QImage.Format.Format_RGB32)
-        qimg.fill(QColor(14, 14, 14))
-
-        painter = QPainter(qimg)
-        painter.setFont(self._qfont)
-
-        for y in range(h):
-            row_colors = colors_rgb[y]
-            row_chars = chars_2d[y]
-            baseline = y * ch + ascent
-
-            # numpy-detected color-run boundaries
-            if w > 1:
-                diffs = np.any(row_colors[1:] != row_colors[:-1], axis=1)
-                breaks = np.where(diffs)[0] + 1
-                boundaries = np.empty(len(breaks) + 2, dtype=np.intp)
-                boundaries[0] = 0
-                boundaries[1:-1] = breaks
-                boundaries[-1] = w
-            else:
-                boundaries = np.array([0, w], dtype=np.intp)
-
-            for i in range(len(boundaries) - 1):
-                s = int(boundaries[i])
-                e = int(boundaries[i + 1])
-                r = int(row_colors[s, 0])
-                g = int(row_colors[s, 1])
-                b = int(row_colors[s, 2])
-                text = "".join(row_chars[s:e].tolist())
-                if text.strip():
-                    painter.setPen(QColor(r, g, b))
-                    painter.drawText(s * cw, baseline, text)
-
-        painter.end()
-        return qimg
