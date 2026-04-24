@@ -1,18 +1,7 @@
-"""
-Glyph Atlas — pre-rendered character bitmaps for ultra-fast ASCII frame composition.
-
-Instead of calling drawText() per character (O(W×H) draw calls), we:
-1. Pre-render every unique character into a small alpha-mask array (one-time cost).
-2. Compose full frames by indexing into the atlas + broadcasting colors — pure NumPy.
-
-Result: ~10-50× faster than QPainter/PIL per-character loops, dramatically less RAM.
-"""
-
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from typing import Optional
 
-# ── Font loading (shared with ascii_renderer) ─────────────────────────
 
 _font_cache: dict[int, ImageFont.FreeTypeFont] = {}
 
@@ -35,12 +24,7 @@ def _get_font(size: int) -> ImageFont.FreeTypeFont:
 
 
 class GlyphAtlas:
-    """
-    Pre-rendered glyph atlas for a specific charset + font size.
-
-    Each character is rendered once into an alpha mask (grayscale 0-255).
-    compose_frame() then uses vectorized NumPy ops to blit colored characters.
-    """
+    
 
     def __init__(self, char_set: str, font_size: int, font_name: str = "consola.ttf"):
         self.char_set = char_set
@@ -80,7 +64,7 @@ class GlyphAtlas:
         self._space_idx = self._char_to_idx.get(" ", 0)
 
     def _chars_to_indices(self, chars_2d: np.ndarray) -> np.ndarray:
-        """Convert character array to index array for atlas lookup."""
+        
         h, w = chars_2d.shape
         indices = np.full((h, w), self._space_idx, dtype=np.int32)
         for ch, idx in self._char_to_idx.items():
@@ -95,18 +79,7 @@ class GlyphAtlas:
         bg_color: tuple[int, int, int] = (14, 14, 14),
         out_buf: Optional[np.ndarray] = None,
     ) -> np.ndarray:
-        """
-        Compose a full RGB frame from character + color arrays.
-
-        Args:
-            chars_2d:  shape (rows, cols), dtype '<U1'
-            colors_rgb: shape (rows, cols, 3), dtype uint8
-            bg_color:  background RGB tuple
-            out_buf:   optional pre-allocated output array shape (rows*cell_h, cols*cell_w, 3)
-
-        Returns:
-            RGB uint8 array shape (rows*cell_h, cols*cell_w, 3)
-        """
+    
         rows, cols = chars_2d.shape
         img_h = rows * self.cell_h
         img_w = cols * self.cell_w
@@ -157,7 +130,7 @@ _atlas_cache: dict[tuple[str, int], GlyphAtlas] = {}
 
 
 def get_atlas(char_set: str, font_size: int) -> GlyphAtlas:
-    """Get or create a cached GlyphAtlas for the given charset and font size."""
+    
     key = (char_set, font_size)
     if key not in _atlas_cache:
         _atlas_cache[key] = GlyphAtlas(char_set, font_size)
@@ -165,5 +138,5 @@ def get_atlas(char_set: str, font_size: int) -> GlyphAtlas:
 
 
 def clear_atlas_cache():
-    """Clear all cached atlases (e.g. when switching charsets)."""
+   
     _atlas_cache.clear()
