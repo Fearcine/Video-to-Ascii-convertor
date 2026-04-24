@@ -10,7 +10,7 @@ def generate_icon(output_path: str = "icon.ico"):
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         draw = ImageDraw.Draw(img)
 
-        # Rounded-ish dark gradient background
+        
         for y in range(size):
             t = y / size
             r = int(15 + t * 20)
@@ -18,10 +18,10 @@ def generate_icon(output_path: str = "icon.ico"):
             b = int(50 + t * 40)
             draw.line([(0, y), (size - 1, y)], fill=(r, g, b, 255))
 
-        # Border glow
+        
         draw.rectangle([0, 0, size - 1, size - 1], outline=(79, 195, 247, 180), width=max(1, size // 32))
 
-        # Text ">_"
+        
         font_size = max(8, size // 3)
         try:
             font = ImageFont.truetype("consola.ttf", font_size)
