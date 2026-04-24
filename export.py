@@ -214,7 +214,7 @@ class ExportMP4Thread(QThread):
 
     @staticmethod
     def _pad_frame(frame: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
-        """Pad frame to exact target dimensions if needed."""
+       
         h, w = frame.shape[:2]
         if w == target_w and h == target_h:
             return frame
