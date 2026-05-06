@@ -9,7 +9,7 @@ from glyph_atlas import get_atlas
 
 
 class RenderThread(QThread):
-    # QImage, chars_2d, colors_rgb, frame_no, total_frames, render_ms
+
     frame_rendered = pyqtSignal(object, object, object, int, int, float)
     playback_finished = pyqtSignal()
     error_occurred = pyqtSignal(str)
@@ -26,7 +26,7 @@ class RenderThread(QThread):
         self._fps = 24.0
         self._current_frame = 0
 
-        # Render settings
+
         self._width = 200
         self._height = 100
         self._char_set = " .,:;+*?%S#@"
@@ -78,7 +78,7 @@ class RenderThread(QThread):
             self._seek_frame = frame_no
 
     def mark_frame_consumed(self):
-        """Called by UI after it finishes processing the emitted frame."""
+
         self._frame_consumed = True
 
     def update_settings(
@@ -109,7 +109,6 @@ class RenderThread(QThread):
                 self._speed = speed
             if aspect_lock is not None:
                 self._aspect_lock = aspect_lock
-            # Invalidate output buffer when settings change
             self._out_buf = None
 
     def shutdown(self):
@@ -167,7 +166,7 @@ class RenderThread(QThread):
                 total = self._total_frames
                 fps = self._fps
 
-            # Render first frame
+
             self._render_current(cap)
 
             while True:
@@ -195,7 +194,7 @@ class RenderThread(QThread):
                     self.msleep(16)
                     continue
 
-                # Frame skip: if UI hasn't consumed previous frame, don't render
+
                 if not self._frame_consumed:
                     self.msleep(4)
                     continue
@@ -222,7 +221,7 @@ class RenderThread(QThread):
             with self._lock:
                 if self._shutdown:
                     return
-                # Only clear path if we weren't loading a new video
+
                 if self._video_path == path:
                     self._video_path = ""
 
@@ -257,11 +256,11 @@ class RenderThread(QThread):
             self.error_occurred.emit(f"Render error: {e}")
             return
 
-        # Compose QImage via glyph atlas (replaces old QPainter per-char loop)
+
         font_px = self._get_preview_font_px(w)
         atlas = get_atlas(cs, font_px)
 
-        # Reuse output buffer if dimensions match
+
         img_h = h * atlas.cell_h
         img_w = w * atlas.cell_w
         if (self._out_buf is not None and 
@@ -273,7 +272,7 @@ class RenderThread(QThread):
 
         rgb_array = atlas.compose_frame(chars_2d, colors_rgb, (14, 14, 14), out_buf)
 
-        # Wrap numpy array as QImage (zero-copy via buffer reference)
+
         qimg = QImage(
             rgb_array.data,
             rgb_array.shape[1],
@@ -281,7 +280,7 @@ class RenderThread(QThread):
             rgb_array.strides[0],
             QImage.Format.Format_RGB888,
         )
-        # Must copy because rgb_array may be reused — QImage doesn't own the data
+
         qimg = qimg.copy()
 
         render_ms = (time.perf_counter() - t0) * 1000.0

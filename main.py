@@ -1,8 +1,4 @@
-"""
-VideoToASCII — Main application entry point.
-Full desktop GUI: left control panel + right QImage-based ASCII preview.
-Optimized: glyph atlas rendering, buffer reuse, MP4 export, image-to-ASCII.
-"""
+
 
 import sys
 import os
@@ -71,13 +67,13 @@ class MainWindow(QMainWindow):
         self._mono_color = tuple(self._settings.get("mono_color", [255, 255, 255]))
         self._export_thread: ExportVideoThread | ExportMP4Thread | None = None
 
-        # Settings debounce timer — prevents spamming render thread
+
         self._settings_timer = QTimer(self)
         self._settings_timer.setSingleShot(True)
         self._settings_timer.setInterval(100)
         self._settings_timer.timeout.connect(self._apply_settings)
 
-        # Render thread
+
         self._render = RenderThread(self)
         self._render.frame_rendered.connect(self._on_frame_rendered)
         self._render.playback_finished.connect(self._on_playback_finished)
@@ -91,7 +87,7 @@ class MainWindow(QMainWindow):
         if self._video_path and os.path.isfile(self._video_path):
             self._load_video(self._video_path)
 
-    # ── UI construction ───────────────────────────────────────────────
+
 
     def _build_ui(self):
         central = QWidget()
@@ -100,7 +96,7 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        # ── Left panel (scrollable) ──────────────────────────────────
+
         left_scroll = QScrollArea()
         left_scroll.setFixedWidth(290)
         left_scroll.setWidgetResizable(True)
@@ -129,7 +125,7 @@ class MainWindow(QMainWindow):
         left_layout.setContentsMargins(10, 10, 10, 10)
         left_layout.setSpacing(4)
 
-        # Upload buttons
+
         upload_row = QHBoxLayout()
         self.btn_upload = QPushButton("📁  Video")
         self.btn_upload.setStyleSheet(
@@ -153,7 +149,7 @@ class MainWindow(QMainWindow):
         self.lbl_filename.setStyleSheet("color: #888; font-size: 11px; padding: 2px;")
         left_layout.addWidget(self.lbl_filename)
 
-        # ── Resolution ────────────────────────────────────────────────
+
         grp_res = QGroupBox("RESOLUTION")
         res_layout = QVBoxLayout(grp_res)
 
@@ -191,7 +187,7 @@ class MainWindow(QMainWindow):
 
         left_layout.addWidget(grp_res)
 
-        # ── Character set ─────────────────────────────────────────────
+
         grp_chars = QGroupBox("CHARACTER SET")
         chars_layout = QVBoxLayout(grp_chars)
 
@@ -209,7 +205,7 @@ class MainWindow(QMainWindow):
 
         left_layout.addWidget(grp_chars)
 
-        # ── Color mode ────────────────────────────────────────────────
+
         grp_color = QGroupBox("COLOR MODE")
         color_layout = QVBoxLayout(grp_color)
 
@@ -251,7 +247,7 @@ class MainWindow(QMainWindow):
 
         left_layout.addWidget(grp_color)
 
-        # ── Playback ──────────────────────────────────────────────────
+
         grp_play = QGroupBox("PLAYBACK")
         play_layout = QVBoxLayout(grp_play)
 
@@ -287,7 +283,7 @@ class MainWindow(QMainWindow):
 
         left_layout.addWidget(grp_play)
 
-        # ── Output ────────────────────────────────────────────────────
+
         grp_out = QGroupBox("OUTPUT")
         out_layout = QVBoxLayout(grp_out)
 
@@ -337,7 +333,7 @@ class MainWindow(QMainWindow):
 
         left_scroll.setWidget(left_panel)
 
-        # ── Right panel (preview) ─────────────────────────────────────
+
         right_panel = QWidget()
         right_panel.setStyleSheet("background: #0e0e0e;")
         right_layout = QVBoxLayout(right_panel)
@@ -365,7 +361,7 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(right_panel, 1)
 
-    # ── Settings restore/save ─────────────────────────────────────────
+
 
     def _restore_settings(self):
         s = self._settings
@@ -412,7 +408,7 @@ class MainWindow(QMainWindow):
         })
         save_settings(self._settings)
 
-    # ── Helpers ────────────────────────────────────────────────────────
+
 
     def _get_char_set(self) -> str:
         name = self.cmb_charset.currentText()
@@ -452,20 +448,18 @@ class MainWindow(QMainWindow):
             aspect_lock=self.chk_aspect.isChecked(),
         )
 
-    # ── Debounced settings ────────────────────────────────────────────
+
 
     def _on_setting_changed(self, *_args):
         self._settings_timer.start()  # Restart debounce
 
     def _apply_settings(self):
-        """Called after debounce timer expires."""
         self._push_settings_to_thread()
         self._persist_settings()
-        # Re-render image if in image mode
         if self._mode == "image" and self._image_path:
             self._render_image()
 
-    # ── Slots ──────────────────────────────────────────────────────────
+
 
     def _on_upload(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -484,13 +478,12 @@ class MainWindow(QMainWindow):
             self._load_image(path)
 
     def _load_image(self, path: str):
-        """Load an image and render it as ASCII art."""
         self._image_path = path
         self._video_path = ""
         self._mode = "image"
         self.lbl_filename.setText(f"🖼️ {os.path.basename(path)}")
 
-        # Hide video-only controls
+
         self.btn_play.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.slider_seek.setEnabled(False)
@@ -499,15 +492,12 @@ class MainWindow(QMainWindow):
         self.btn_save_video.setEnabled(False)
         self.btn_export_png.setEnabled(True)
 
-        # Stop any video playback
         self._render.stop()
 
-        # Render the image
         self._render_image()
         self._persist_settings()
 
     def _render_image(self):
-        """Render the loaded image as ASCII art and display in preview."""
         if not self._image_path or not os.path.isfile(self._image_path):
             return
 
@@ -533,7 +523,6 @@ class MainWindow(QMainWindow):
             self._current_chars = chars_2d
             self._current_colors = colors_rgb
 
-            # Compose preview image via glyph atlas
             font_px = 10 if w <= 150 else (7 if w <= 300 else (5 if w <= 500 else 4))
             atlas = get_atlas(self._get_char_set(), font_px)
             rgb_array = atlas.compose_frame(chars_2d, colors_rgb, (14, 14, 14))
@@ -557,7 +546,7 @@ class MainWindow(QMainWindow):
         self._mode = "video"
         self.lbl_filename.setText(os.path.basename(path))
 
-        # Re-enable video controls
+
         self.btn_play.setEnabled(True)
         self.btn_stop.setEnabled(True)
         self.slider_seek.setEnabled(True)
@@ -566,7 +555,6 @@ class MainWindow(QMainWindow):
         self.btn_save_video.setEnabled(True)
         self.btn_export_png.setEnabled(True)
 
-        # Force aspect lock on video load
         self.chk_aspect.setChecked(True)
 
         self._render.load_video(path)
@@ -686,7 +674,7 @@ class MainWindow(QMainWindow):
     def _on_error(self, msg: str):
         QMessageBox.warning(self, "Error", msg)
 
-    # ── Export: MP4 ────────────────────────────────────────────────────
+
 
     def _on_export_mp4(self):
         if not self._video_path:
@@ -731,7 +719,7 @@ class MainWindow(QMainWindow):
         self._export_thread.finished.connect(progress.close)
         self._export_thread.start()
 
-    # ── Export: PNG ────────────────────────────────────────────────────
+
 
     def _on_export_png(self):
         if self._current_chars is None:
@@ -750,14 +738,13 @@ class MainWindow(QMainWindow):
             rgb_frame = atlas.compose_frame(
                 self._current_chars, self._current_colors, (17, 17, 17)
             )
-            # Convert RGB to BGR for cv2.imwrite
             bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
             cv2.imwrite(path, bgr_frame)
             QMessageBox.information(self, "Saved", f"ASCII PNG saved to:\n{path}")
         except Exception as e:
             QMessageBox.warning(self, "Export Error", str(e))
 
-    # ── Export: TXT ────────────────────────────────────────────────────
+
 
     def _on_save_video(self):
         if not self._video_path:
@@ -800,7 +787,7 @@ class MainWindow(QMainWindow):
         self._export_thread.finished.connect(progress.close)
         self._export_thread.start()
 
-    # ── Export: single frame ──────────────────────────────────────────
+
 
     def _on_save_frame(self):
         if self._current_chars is None:
@@ -850,7 +837,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.warning(self, "Export Error", str(e))
 
-    # ── Cleanup ────────────────────────────────────────────────────────
+
 
     def closeEvent(self, event):
         self._persist_settings()
