@@ -149,14 +149,14 @@ class ExportMP4Thread(QThread):
             if self._aspect_lock and va > 0:
                 ascii_h = max(1, int(ascii_w / va * 0.5))
 
-            # Get the glyph atlas for this charset + font size
+
             atlas = get_atlas(self._char_set, self._font_size)
 
-            # Compute output pixel dimensions from atlas cell size
+
             out_px_h = ascii_h * atlas.cell_h
             out_px_w = ascii_w * atlas.cell_w
 
-            # Ensure dimensions are even (required by most codecs)
+
             out_px_w = out_px_w if out_px_w % 2 == 0 else out_px_w + 1
             out_px_h = out_px_h if out_px_h % 2 == 0 else out_px_h + 1
 
@@ -166,7 +166,7 @@ class ExportMP4Thread(QThread):
                 self.error_occurred.emit("Failed to create output video writer.")
                 return
 
-            # Pre-allocate output buffer — reused for every frame
+
             rgb_buf = np.full((ascii_h * atlas.cell_h, ascii_w * atlas.cell_w, 3), 17, dtype=np.uint8)
 
             n = 0
@@ -180,11 +180,11 @@ class ExportMP4Thread(QThread):
                     self._char_set, self._color_mode, self._intensity, self._mono_color,
                 )
 
-                # Render via atlas into reusable buffer
+
                 rgb_frame = atlas.compose_frame(chars, colors, (17, 17, 17), rgb_buf)
                 bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
 
-                # Pad if needed 
+                # Pad if needed
                 padded = self._pad_frame(bgr_frame, out_px_w, out_px_h)
                 writer.write(padded)
 

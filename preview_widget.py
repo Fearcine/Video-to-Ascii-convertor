@@ -31,7 +31,7 @@ class PreviewWidget(QWidget):
             painter.end()
             return
 
-        # Scale image to fit the widget, maintaining aspect ratio
+
         img_w = self._image.width()
         img_h = self._image.height()
         wgt_w = self.width()

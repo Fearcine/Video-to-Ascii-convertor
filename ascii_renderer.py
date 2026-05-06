@@ -19,13 +19,6 @@ def frame_to_ascii(
     intensity: int,
     mono_color: tuple[int, int, int] = (255, 255, 255),
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Convert a BGR frame to ASCII representation.
-
-    Returns:
-        chars_2d:  np.ndarray dtype='<U1' shape (height, width)
-        colors_rgb: np.ndarray dtype=uint8  shape (height, width, 3)
-    """
     if frame_bgr is None or len(char_set) == 0:
         empty_c = np.full((1, 1), " ", dtype="<U1")
         empty_rgb = np.zeros((1, 1, 3), dtype=np.uint8)
@@ -34,7 +27,6 @@ def frame_to_ascii(
     resized = cv2.resize(frame_bgr, (width, height), interpolation=cv2.INTER_AREA)
     rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB).astype(np.float32)
 
-    # Vectorized luminance
     luminance = rgb[:, :, 0] * 0.299 + rgb[:, :, 1] * 0.587 + rgb[:, :, 2] * 0.114
 
     num_chars = len(char_set)
@@ -69,21 +61,6 @@ def image_to_ascii(
     mono_color: tuple[int, int, int] = (255, 255, 255),
     aspect_ratio: float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Load an image and convert to ASCII representation.
-
-    Args:
-        image_path: Path to the image file.
-        width: Target width in characters.
-        char_set: Character set string.
-        color_mode: "Colored", "Grayscale", or "Monochrome".
-        intensity: Color intensity (0-100).
-        mono_color: RGB tuple for monochrome mode.
-        aspect_ratio: If provided, compute height from width using this ratio.
-
-    Returns:
-        chars_2d, colors_rgb — same as frame_to_ascii.
-    """
     frame_bgr = cv2.imread(image_path, cv2.IMREAD_COLOR)
     if frame_bgr is None:
         raise IOError(f"Cannot load image: {image_path}")
@@ -106,7 +83,7 @@ def render_to_rgb(
     out_buf: np.ndarray | None = None,
 ) -> np.ndarray:
     
-    # Collect unique chars from the array to build minimal charset for atlas
+    # Collect unique chars for atlas
     atlas = get_atlas(char_set, font_size)
     return atlas.compose_frame(chars_2d, colors_rgb, bg_color, out_buf)
 
