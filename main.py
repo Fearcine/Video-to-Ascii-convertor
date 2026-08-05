@@ -2,6 +2,7 @@
 
 import sys
 import os
+import traceback
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -41,6 +42,8 @@ from export import (
 )
 from ascii_renderer import CHAR_SETS, image_to_ascii, render_to_rgb
 from glyph_atlas import get_atlas
+from shared_utils import get_preview_font_px
+from render_settings import RenderSettings
 import numpy as np
 import cv2
 
@@ -192,7 +195,11 @@ class MainWindow(QMainWindow):
         chars_layout = QVBoxLayout(grp_chars)
 
         self.cmb_charset = QComboBox()
-        self.cmb_charset.addItems(["Standard", "Dense", "Simple", "Custom"])
+        self.cmb_charset.addItems([
+            "Standard", "Dense", "Simple",
+            "Japanese", "Chinese", "Best Mix",
+            "Custom",
+        ])
         chars_layout.addWidget(self.cmb_charset)
 
         self.txt_custom_chars = QLineEdit()
@@ -237,8 +244,8 @@ class MainWindow(QMainWindow):
         color_layout.addWidget(QLabel("Color intensity:"))
         self.slider_intensity = QSlider(Qt.Orientation.Horizontal)
         self.slider_intensity.setRange(0, 100)
-        self.slider_intensity.setValue(80)
-        self.lbl_intensity = QLabel("80%")
+        self.slider_intensity.setValue(100)
+        self.lbl_intensity = QLabel("100%")
         int_row = QHBoxLayout()
         int_row.addWidget(self.slider_intensity)
         int_row.addWidget(self.lbl_intensity)
@@ -292,6 +299,10 @@ class MainWindow(QMainWindow):
         self.slider_fontsize = QSlider(Qt.Orientation.Horizontal)
         self.slider_fontsize.setRange(4, 16)
         self.slider_fontsize.setValue(8)
+        self.slider_fontsize.setToolTip(
+            "Controls font size for PNG/HTML/MP4 exports only.\n"
+            "Live preview auto-sizes based on character width."
+        )
         self.lbl_fontsize = QLabel("8px")
         self.slider_fontsize.valueChanged.connect(
             lambda v: self.lbl_fontsize.setText(f"{v}px")
@@ -436,8 +447,9 @@ class MainWindow(QMainWindow):
             f"background-color: rgb({r},{g},{b}); border: 1px solid #666; border-radius: 4px;"
         )
 
-    def _push_settings_to_thread(self):
-        self._render.update_settings(
+    def _get_render_settings(self) -> RenderSettings:
+        """Build an immutable RenderSettings snapshot from the current UI state."""
+        return RenderSettings(
             width=self.slider_width.value(),
             height=self.slider_height.value(),
             char_set=self._get_char_set(),
@@ -446,7 +458,12 @@ class MainWindow(QMainWindow):
             mono_color=self._mono_color,
             speed=self._get_speed(),
             aspect_lock=self.chk_aspect.isChecked(),
+            font_size=self.slider_fontsize.value(),
         )
+
+    def _push_settings_to_thread(self):
+        rs = self._get_render_settings()
+        self._render.apply_settings(rs)
 
 
 
@@ -523,7 +540,7 @@ class MainWindow(QMainWindow):
             self._current_chars = chars_2d
             self._current_colors = colors_rgb
 
-            font_px = 10 if w <= 150 else (7 if w <= 300 else (5 if w <= 500 else 4))
+            font_px = get_preview_font_px(w)
             atlas = get_atlas(self._get_char_set(), font_px)
             rgb_array = atlas.compose_frame(chars_2d, colors_rgb, (14, 14, 14))
 
@@ -538,6 +555,7 @@ class MainWindow(QMainWindow):
                 f"{w}×{h} chars  |  Image mode"
             )
         except Exception as e:
+            traceback.print_exc(file=sys.stderr)
             QMessageBox.warning(self, "Error", f"Image render error: {e}")
 
     def _load_video(self, path: str):
@@ -742,6 +760,7 @@ class MainWindow(QMainWindow):
             cv2.imwrite(path, bgr_frame)
             QMessageBox.information(self, "Saved", f"ASCII PNG saved to:\n{path}")
         except Exception as e:
+            traceback.print_exc(file=sys.stderr)
             QMessageBox.warning(self, "Export Error", str(e))
 
 
@@ -808,11 +827,13 @@ class MainWindow(QMainWindow):
                 save_current_frame_txt(self._current_chars, path)
             QMessageBox.information(self, "Saved", f"Frame saved to:\n{path}")
         except Exception as e:
+            traceback.print_exc(file=sys.stderr)
             QMessageBox.warning(self, "Save Error", str(e))
 
     def _on_export_html(self):
-        if not self._video_path:
-            QMessageBox.information(self, "No Video", "Please upload a video first.")
+        # Works in both video and image mode
+        if not self._video_path and not self._image_path:
+            QMessageBox.information(self, "No Content", "Please load a video or image first.")
             return
         path, _ = QFileDialog.getSaveFileName(
             self, "Export HTML", "", "HTML Files (*.html)"
@@ -820,32 +841,50 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            export_full_html(
-                video_path=self._video_path,
-                output_path=path,
-                frame_no=self._current_frame_no,
-                width=self.slider_width.value(),
-                height=self.slider_height.value(),
-                char_set=self._get_char_set(),
-                color_mode=self._get_color_mode(),
-                intensity=self.slider_intensity.value(),
-                mono_color=self._mono_color,
-                font_size=self.slider_fontsize.value(),
-                aspect_lock=self.chk_aspect.isChecked(),
-            )
+            if self._mode == "image" or not self._video_path:
+                # Image mode: export from current rendered data
+                if self._current_chars is None:
+                    QMessageBox.information(self, "No Frame", "No frame to export. Load an image first.")
+                    return
+                save_current_frame_html(
+                    self._current_chars, self._current_colors,
+                    path, self.slider_fontsize.value(),
+                )
+            else:
+                # Video mode: re-render from video file at current frame
+                export_full_html(
+                    video_path=self._video_path,
+                    output_path=path,
+                    frame_no=self._current_frame_no,
+                    width=self.slider_width.value(),
+                    height=self.slider_height.value(),
+                    char_set=self._get_char_set(),
+                    color_mode=self._get_color_mode(),
+                    intensity=self.slider_intensity.value(),
+                    mono_color=self._mono_color,
+                    font_size=self.slider_fontsize.value(),
+                    aspect_lock=self.chk_aspect.isChecked(),
+                )
             QMessageBox.information(self, "Exported", f"HTML exported to:\n{path}")
         except Exception as e:
+            traceback.print_exc(file=sys.stderr)
             QMessageBox.warning(self, "Export Error", str(e))
 
 
 
     def closeEvent(self, event):
-        self._persist_settings()
+        try:
+            self._persist_settings()
+        except Exception as e:
+            import traceback
+            print(f"Warning: Failed to persist settings: {e}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
         self._render.shutdown()
         if self._export_thread and self._export_thread.isRunning():
             self._export_thread.cancel()
             self._export_thread.wait(3000)
         event.accept()
+
 
 
 def main():

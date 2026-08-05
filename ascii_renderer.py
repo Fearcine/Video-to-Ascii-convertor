@@ -4,9 +4,16 @@ from PIL import Image
 from glyph_atlas import get_atlas
 
 CHAR_SETS = {
-    "Standard": " .,:;+*?%S#@",
-    "Dense": " ░▒▓█",
-    "Simple": " █",
+    # Re-derived by actual glyph coverage measurement (see glyph_atlas.sort_chars_by_coverage)
+    "Standard": " .:,*;?+S%#@",
+    "Dense": " \u2591\u2592\u2593\u2588",
+    "Simple": " \u2588",
+    # CJK sets: characters sorted by measured pixel coverage, sparse \u2192 dense.
+    # Uses per-character font routing (Latin font for ASCII, CJK font for ideographs).
+    "Japanese": " \u4e00\u3044\u30a2\u3093\u30ab\u306e\u6728\u6c34\u3042\u6708\u65e5\u8db3\u9ece\u9054\u6a5f\u9b31\u97ff",
+    "Chinese":  " \u4e8c\u4e0a\u5ddd\u571f\u5973\u53e3\u738b\u5b57\u91d1\u6b63\u53f3\u8349\u6d77\u7e54\u9f8d\u9b31\u97ff",
+    # Mixed Latin + CJK, interleaved by coverage for maximum visual variety
+    "Best Mix": " :,*\u3057\u30a2;+\u5c0f\u306e\u304d\u5927\u6c34\u53e3\u3042#\u6d77\u611b@\u97ff",
 }
 
 
@@ -30,8 +37,14 @@ def frame_to_ascii(
     luminance = rgb[:, :, 0] * 0.299 + rgb[:, :, 1] * 0.587 + rgb[:, :, 2] * 0.114
 
     num_chars = len(char_set)
+    # Gamma correction: power < 1 lifts midtones toward denser characters,
+    # compensating for the nonlinear relationship between pixel brightness
+    # and perceived character density. 0.6 is a sensible default.
+    _GAMMA = 0.6
+    normalized = luminance / 255.0
+    gamma_corrected = np.power(normalized, _GAMMA)
     indices = np.clip(
-        (luminance / 255.0 * (num_chars - 1)).astype(np.int32), 0, num_chars - 1
+        (gamma_corrected * (num_chars - 1)).astype(np.int32), 0, num_chars - 1
     )
 
     char_array = np.array(list(char_set), dtype="<U1")

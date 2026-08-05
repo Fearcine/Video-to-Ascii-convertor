@@ -10,7 +10,7 @@ _DEFAULTS = {
     "custom_chars": "",
     "color_mode": "Colored",
     "mono_color": [255, 255, 255],
-    "intensity": 80,
+    "intensity": 100,
     "speed": 1.0,
     "font_size": 8,
     "last_video": "",

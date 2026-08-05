@@ -1,4 +1,6 @@
 import os
+import sys
+import traceback
 import cv2
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -90,6 +92,7 @@ class ExportVideoThread(QThread):
             self.finished_ok.emit(self._output_path)
 
         except Exception as e:
+            traceback.print_exc(file=sys.stderr)
             self.error_occurred.emit(str(e))
 
 
@@ -205,6 +208,7 @@ class ExportMP4Thread(QThread):
             self.finished_ok.emit(self._output_path)
 
         except Exception as e:
+            traceback.print_exc(file=sys.stderr)
             self.error_occurred.emit(str(e))
         finally:
             if writer is not None and writer.isOpened():

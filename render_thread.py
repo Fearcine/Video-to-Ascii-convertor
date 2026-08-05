@@ -1,11 +1,15 @@
 import time
+import sys
 import threading
+import traceback
 import numpy as np
 import cv2
 from PyQt6.QtCore import QThread, pyqtSignal
 from PyQt6.QtGui import QImage
 from ascii_renderer import frame_to_ascii
 from glyph_atlas import get_atlas
+from shared_utils import get_preview_font_px
+from render_settings import RenderSettings
 
 
 class RenderThread(QThread):
@@ -31,7 +35,7 @@ class RenderThread(QThread):
         self._height = 100
         self._char_set = " .,:;+*?%S#@"
         self._color_mode = "Colored"
-        self._intensity = 80
+        self._intensity = 100
         self._mono_color = (255, 255, 255)
         self._speed = 1.0
         self._aspect_lock = True
@@ -78,8 +82,8 @@ class RenderThread(QThread):
             self._seek_frame = frame_no
 
     def mark_frame_consumed(self):
-
-        self._frame_consumed = True
+        with self._lock:
+            self._frame_consumed = True
 
     def update_settings(
         self,
@@ -111,6 +115,33 @@ class RenderThread(QThread):
                 self._aspect_lock = aspect_lock
             self._out_buf = None
 
+    def apply_settings(self, rs: RenderSettings):
+        """Apply a RenderSettings snapshot to the thread."""
+        self.update_settings(
+            width=rs.width,
+            height=rs.height,
+            char_set=rs.char_set,
+            color_mode=rs.color_mode,
+            intensity=rs.intensity,
+            mono_color=rs.mono_color,
+            speed=rs.speed,
+            aspect_lock=rs.aspect_lock,
+        )
+
+    def get_settings(self) -> RenderSettings:
+        """Return an immutable snapshot of the current render settings."""
+        with self._lock:
+            return RenderSettings(
+                width=self._width,
+                height=self._height,
+                char_set=self._char_set,
+                color_mode=self._color_mode,
+                intensity=self._intensity,
+                mono_color=self._mono_color,
+                speed=self._speed,
+                aspect_lock=self._aspect_lock,
+            )
+
     def shutdown(self):
         with self._lock:
             self._shutdown = True
@@ -118,18 +149,9 @@ class RenderThread(QThread):
             self._playing = False
         self.wait(5000)
 
-   
-
     def _get_preview_font_px(self, ascii_width: int) -> int:
-        
-        if ascii_width <= 150:
-            return 10
-        elif ascii_width <= 300:
-            return 7
-        elif ascii_width <= 500:
-            return 5
-        else:
-            return 4
+        """Delegate to the shared utility."""
+        return get_preview_font_px(ascii_width)
 
     def run(self):
         while True:
@@ -151,6 +173,7 @@ class RenderThread(QThread):
                         self._video_path = ""
                     continue
             except Exception as e:
+                traceback.print_exc(file=sys.stderr)
                 self.error_occurred.emit(str(e))
                 with self._lock:
                     self._video_path = ""
@@ -195,7 +218,9 @@ class RenderThread(QThread):
                     continue
 
 
-                if not self._frame_consumed:
+                with self._lock:
+                    consumed = self._frame_consumed
+                if not consumed:
                     self.msleep(4)
                     continue
 
@@ -244,6 +269,7 @@ class RenderThread(QThread):
             cur = self._current_frame
             aspect_lock = self._aspect_lock
             va = self._video_aspect
+            out_buf = self._out_buf  # Read under lock to avoid race with update_settings
 
         if aspect_lock and va > 0:
             h = max(1, int(w / va * 0.5))
@@ -253,6 +279,7 @@ class RenderThread(QThread):
         try:
             chars_2d, colors_rgb = frame_to_ascii(frame, w, h, cs, cm, intensity, mc)
         except Exception as e:
+            traceback.print_exc(file=sys.stderr)
             self.error_occurred.emit(f"Render error: {e}")
             return
 
@@ -263,12 +290,13 @@ class RenderThread(QThread):
 
         img_h = h * atlas.cell_h
         img_w = w * atlas.cell_w
-        if (self._out_buf is not None and 
-            self._out_buf.shape == (img_h, img_w, 3)):
-            out_buf = self._out_buf
+        if (out_buf is not None and
+            out_buf.shape == (img_h, img_w, 3)):
+            pass  # Reuse existing buffer
         else:
             out_buf = np.full((img_h, img_w, 3), 14, dtype=np.uint8)
-            self._out_buf = out_buf
+            with self._lock:
+                self._out_buf = out_buf
 
         rgb_array = atlas.compose_frame(chars_2d, colors_rgb, (14, 14, 14), out_buf)
 
@@ -285,5 +313,6 @@ class RenderThread(QThread):
 
         render_ms = (time.perf_counter() - t0) * 1000.0
 
-        self._frame_consumed = False
+        with self._lock:
+            self._frame_consumed = False
         self.frame_rendered.emit(qimg, chars_2d, colors_rgb, cur, total, render_ms)

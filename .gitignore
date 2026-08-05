@@ -7,3 +7,11 @@ settings.json
 *.egg-info/
 .venv/
 venv/
+
+# Installer binaries — distributed via GitHub Releases
+*.exe
+*.msi
+
+# Tests & caches (local only)
+tests/
+.pytest_cache/
