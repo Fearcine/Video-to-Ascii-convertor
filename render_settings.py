@@ -18,6 +18,7 @@ class RenderSettings:
     color_mode: str = "Colored"  # "Colored" | "Grayscale" | "Monochrome"
     intensity: int = 100
     brightness: int = 100
+    invert_ascii: bool = False
     mono_color: tuple[int, int, int] = (255, 255, 255)
     bg_color: tuple[int, int, int] = (14, 14, 14)
     speed: float = 1.0

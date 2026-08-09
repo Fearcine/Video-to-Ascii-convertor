@@ -1,8 +1,4 @@
-"""VideoToASCII — Video & Image to Colored ASCII Art.
-
-Retro-styled tool UI inspired by Windows 2000 utilities and waifu2x.net.
-No emojis, plain labels, flat system colors.
-"""
+"""VideoToASCII — Video & Image to Colored ASCII Art."""
 
 import sys
 import os
@@ -48,6 +44,8 @@ from ascii_renderer import CHAR_SETS, image_to_ascii
 from glyph_atlas import get_atlas
 from shared_utils import get_preview_font_px
 from render_settings import RenderSettings
+from PyQt6.QtWidgets import QStackedWidget
+from loading_screen import MatrixLoadingScreen
 import numpy as np
 import cv2
 
@@ -76,6 +74,7 @@ _RESET_DEFAULTS = {
     "color_mode": "Colored",
     "intensity": 100,
     "brightness": 100,
+    "invert_ascii": False,
     "bg_color": (14, 14, 14),
     "mono_color": (255, 255, 255),
     "speed": 1.0,
@@ -311,8 +310,13 @@ class MainWindow(QMainWindow):
             self._load_video(self._video_path)
         elif os.path.isfile(_demo_video_path()):
             self._load_video(_demo_video_path())
-            # Auto-play the demo
-            QTimer.singleShot(800, self._auto_play_demo)
+            # Demo auto-plays in _on_continue
+
+    def _on_continue(self):
+        """Switch to main UI and play demo if loaded."""
+        self.stacked_widget.setCurrentIndex(1)
+        if self._video_path and self._mode == "video":
+            QTimer.singleShot(200, self._auto_play_demo)
 
     def _auto_play_demo(self):
         """Start playing the demo video automatically."""
@@ -324,8 +328,15 @@ class MainWindow(QMainWindow):
     # ── UI construction ───────────────────────────────────────────────────
 
     def _build_ui(self):
+        self.stacked_widget = QStackedWidget()
+        self.setCentralWidget(self.stacked_widget)
+        
+        self.loading_screen = MatrixLoadingScreen(self)
+        self.loading_screen.btn_continue.clicked.connect(self._on_continue)
+        self.stacked_widget.addWidget(self.loading_screen)
+        
         central = QWidget()
-        self.setCentralWidget(central)
+        self.stacked_widget.addWidget(central)
         main_layout = QHBoxLayout(central)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -452,8 +463,12 @@ class MainWindow(QMainWindow):
         self.txt_custom_chars.setEnabled(False)
         chars_layout.addWidget(self.txt_custom_chars)
 
+        self.chk_invert_ascii = QCheckBox("Inverted ASCII")
+        chars_layout.addWidget(self.chk_invert_ascii)
+
         self.cmb_charset.currentTextChanged.connect(self._on_charset_changed)
         self.txt_custom_chars.textChanged.connect(self._on_setting_changed)
+        self.chk_invert_ascii.toggled.connect(self._on_setting_changed)
 
         left_layout.addWidget(grp_chars)
 
@@ -674,6 +689,7 @@ class MainWindow(QMainWindow):
         if idx >= 0:
             self.cmb_charset.setCurrentIndex(idx)
         self.txt_custom_chars.setText(s.get("custom_chars", ""))
+        self.chk_invert_ascii.setChecked(s.get("invert_ascii", False))
 
         cmode = s.get("color_mode", "Colored")
         {"Colored": self.radio_colored, "Grayscale": self.radio_gray}.get(
@@ -710,6 +726,7 @@ class MainWindow(QMainWindow):
             "bg_color": list(self._bg_color),
             "intensity": self.slider_intensity.value(),
             "brightness": self.slider_brightness.value(),
+            "invert_ascii": self.chk_invert_ascii.isChecked(),
             "loop": self.chk_loop.isChecked(),
             "speed": self._get_speed(),
             "font_size": self.slider_fontsize.value(),
@@ -769,6 +786,7 @@ class MainWindow(QMainWindow):
             color_mode=self._get_color_mode(),
             intensity=self.slider_intensity.value(),
             brightness=self.slider_brightness.value(),
+            invert_ascii=self.chk_invert_ascii.isChecked(),
             mono_color=self._mono_color,
             bg_color=self._bg_color,
             speed=self._get_speed(),
@@ -801,6 +819,7 @@ class MainWindow(QMainWindow):
         self.cmb_aspect.setCurrentText(d["aspect_preset"])
         self.cmb_charset.setCurrentText(d["char_set_name"])
         self.txt_custom_chars.setText(d["custom_chars"])
+        self.chk_invert_ascii.setChecked(d["invert_ascii"])
 
         {"Colored": self.radio_colored, "Grayscale": self.radio_gray}.get(
             d["color_mode"], self.radio_mono
@@ -895,6 +914,7 @@ class MainWindow(QMainWindow):
                 self.slider_intensity.value(), self._mono_color,
                 aspect_ratio=aspect,
                 brightness=self.slider_brightness.value(),
+                invert_ascii=self.chk_invert_ascii.isChecked(),
             )
             h = chars_2d.shape[0]
 
@@ -1128,6 +1148,7 @@ class MainWindow(QMainWindow):
             brightness=self.slider_brightness.value(),
             charset_hint=self._get_charset_hint(),
             parent=self,
+            invert_ascii=self.chk_invert_ascii.isChecked(),
         )
 
         self._export_thread.progress.connect(progress.setValue)
@@ -1195,6 +1216,7 @@ class MainWindow(QMainWindow):
             aspect_lock=preset != "Custom",
             brightness=self.slider_brightness.value(),
             parent=self,
+            invert_ascii=self.chk_invert_ascii.isChecked(),
         )
 
         self._export_thread.progress.connect(progress.setValue)
@@ -1265,6 +1287,7 @@ class MainWindow(QMainWindow):
                     aspect_lock=preset != "Custom",
                     bg_color=self._bg_color,
                     brightness=self.slider_brightness.value(),
+                    invert_ascii=self.chk_invert_ascii.isChecked(),
                 )
             QMessageBox.information(self, "Exported", f"HTML exported to:\n{path}")
         except Exception as e:

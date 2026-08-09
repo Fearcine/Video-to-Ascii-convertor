@@ -56,6 +56,6 @@ class PreviewWidget(QWidget):
         x = (wgt_w - dst_w) // 2
         y = (wgt_h - dst_h) // 2
 
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, scale < 0.5)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, scale < 1.0)
         painter.drawImage(QRect(x, y, dst_w, dst_h), self._image)
         painter.end()

@@ -16,6 +16,7 @@ _DEFAULTS = {
     "bg_color": [14, 14, 14],
     "intensity": 100,
     "brightness": 100,
+    "invert_ascii": False,
     "loop": True,
     "speed": 1.0,
     "font_size": 8,

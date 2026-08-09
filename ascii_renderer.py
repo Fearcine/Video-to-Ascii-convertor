@@ -35,6 +35,7 @@ def frame_to_ascii(
     intensity: int,
     mono_color: tuple[int, int, int] = (255, 255, 255),
     brightness: int = 100,
+    invert_ascii: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Convert a BGR video frame to a 2D character grid with per-cell RGB colors.
 
@@ -65,6 +66,8 @@ def frame_to_ascii(
     indices = np.clip(
         (gamma_corrected * (num_chars - 1)).astype(np.int32), 0, num_chars - 1
     )
+    if invert_ascii:
+        indices = (num_chars - 1) - indices
 
     char_array = np.array(list(char_set), dtype="<U1")
     chars_2d = char_array[indices]
@@ -95,6 +98,7 @@ def image_to_ascii(
     mono_color: tuple[int, int, int] = (255, 255, 255),
     aspect_ratio: float | None = None,
     brightness: int = 100,
+    invert_ascii: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Load an image file and convert it to ASCII art."""
     frame_bgr = cv2.imread(image_path, cv2.IMREAD_COLOR)
@@ -109,7 +113,7 @@ def image_to_ascii(
 
     return frame_to_ascii(
         frame_bgr, width, height, char_set, color_mode,
-        intensity, mono_color, brightness,
+        intensity, mono_color, brightness, invert_ascii,
     )
 
 

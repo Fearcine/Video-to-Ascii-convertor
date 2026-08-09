@@ -44,6 +44,7 @@ class RenderThread(QThread):
         self._color_mode = "Colored"
         self._intensity = 100
         self._brightness = 100
+        self._invert_ascii = False
         self._mono_color = (255, 255, 255)
         self._bg_color = (14, 14, 14)
         self._speed = 1.0
@@ -103,6 +104,7 @@ class RenderThread(QThread):
             self._color_mode = rs.color_mode
             self._intensity = rs.intensity
             self._brightness = rs.brightness
+            self._invert_ascii = rs.invert_ascii
             self._mono_color = rs.mono_color
             self._bg_color = rs.bg_color
             self._speed = rs.speed
@@ -121,6 +123,7 @@ class RenderThread(QThread):
                 color_mode=self._color_mode,
                 intensity=self._intensity,
                 brightness=self._brightness,
+                invert_ascii=self._invert_ascii,
                 mono_color=self._mono_color,
                 bg_color=self._bg_color,
                 speed=self._speed,
@@ -287,6 +290,7 @@ class RenderThread(QThread):
             cm = self._color_mode
             intensity = self._intensity
             brightness = self._brightness
+            invert_ascii = self._invert_ascii
             mc = self._mono_color
             bg = self._bg_color
             total = self._total_frames
@@ -302,7 +306,7 @@ class RenderThread(QThread):
 
         try:
             chars_2d, colors_rgb = frame_to_ascii(
-                frame, w, h, cs, cm, intensity, mc, brightness,
+                frame, w, h, cs, cm, intensity, mc, brightness, invert_ascii,
             )
         except Exception as e:
             traceback.print_exc(file=sys.stderr)

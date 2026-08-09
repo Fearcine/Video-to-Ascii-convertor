@@ -34,6 +34,7 @@ class ExportVideoThread(QThread):
         aspect_lock: bool,
         brightness: int = 100,
         parent=None,
+        invert_ascii: bool = False,
     ):
         super().__init__(parent)
         self._video_path = video_path
@@ -46,6 +47,7 @@ class ExportVideoThread(QThread):
         self._mono_color = mono_color
         self._aspect_lock = aspect_lock
         self._brightness = brightness
+        self._invert_ascii = invert_ascii
         self._cancelled = False
 
     def cancel(self):
@@ -76,7 +78,7 @@ class ExportVideoThread(QThread):
                     chars, colors = frame_to_ascii(
                         frame, w, h, self._char_set,
                         self._color_mode, self._intensity,
-                        self._mono_color, self._brightness,
+                        self._mono_color, self._brightness, self._invert_ascii,
                     )
                     text = frame_to_plain_text(chars)
                     f.write("FRAME_START\n")
@@ -124,6 +126,7 @@ class ExportMP4Thread(QThread):
         brightness: int = 100,
         charset_hint: str = "",
         parent=None,
+        invert_ascii: bool = False,
     ):
         super().__init__(parent)
         self._video_path = video_path
@@ -139,6 +142,7 @@ class ExportMP4Thread(QThread):
         self._bg_color = bg_color
         self._brightness = brightness
         self._charset_hint = charset_hint
+        self._invert_ascii = invert_ascii
         self._cancelled = False
 
     def cancel(self):
@@ -194,7 +198,7 @@ class ExportMP4Thread(QThread):
                     frame, ascii_w, ascii_h,
                     self._char_set, self._color_mode,
                     self._intensity, self._mono_color,
-                    self._brightness,
+                    self._brightness, self._invert_ascii,
                 )
 
                 rgb_frame = atlas.compose_frame(chars, colors, self._bg_color, rgb_buf)
@@ -278,6 +282,7 @@ def export_full_html(
     aspect_lock: bool,
     bg_color: tuple[int, int, int] = (17, 17, 17),
     brightness: int = 100,
+    invert_ascii: bool = False,
 ):
     """Extract a single video frame and export as HTML ASCII art."""
     cap = cv2.VideoCapture(video_path)
@@ -298,7 +303,7 @@ def export_full_html(
 
     chars, colors = frame_to_ascii(
         frame, width, height, char_set, color_mode,
-        intensity, mono_color, brightness,
+        intensity, mono_color, brightness, invert_ascii,
     )
     html = frame_to_html(chars, colors, font_size, bg_color)
     with open(output_path, "w", encoding="utf-8") as f:

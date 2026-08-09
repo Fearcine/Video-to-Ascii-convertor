@@ -9,11 +9,17 @@ def get_preview_font_px(ascii_width: int) -> int:
 
     This was previously duplicated in render_thread.py and main.py.
     """
-    if ascii_width <= 150:
-        return 10
+    if ascii_width <= 60:
+        return 32
+    elif ascii_width <= 100:
+        return 24
+    elif ascii_width <= 150:
+        return 16
+    elif ascii_width <= 200:
+        return 12
     elif ascii_width <= 300:
-        return 7
+        return 8
     elif ascii_width <= 500:
-        return 5
+        return 6
     else:
         return 4
