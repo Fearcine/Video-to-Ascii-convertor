@@ -1,3 +1,9 @@
+"""Background thread for real-time ASCII video playback.
+
+Uses deadline-based frame timing with automatic frame skipping to maintain
+smooth playback at the correct speed, regardless of how long each render takes.
+"""
+
 import time
 import sys
 import threading
@@ -30,20 +36,23 @@ class RenderThread(QThread):
         self._fps = 24.0
         self._current_frame = 0
 
-
+        # Render settings (thread-safe via _lock)
         self._width = 200
         self._height = 100
         self._char_set = " .,:;+*?%S#@"
+        self._charset_hint = ""
         self._color_mode = "Colored"
         self._intensity = 100
+        self._brightness = 100
         self._mono_color = (255, 255, 255)
+        self._bg_color = (14, 14, 14)
         self._speed = 1.0
         self._aspect_lock = True
+        self._aspect_preset = "Source"
+        self._loop = True
         self._video_aspect = 1.77
         self._frame_consumed = True
         self._out_buf: np.ndarray | None = None
-        self._preview_font_px = 0
-
 
     def load_video(self, path: str):
         with self._lock:
@@ -85,48 +94,22 @@ class RenderThread(QThread):
         with self._lock:
             self._frame_consumed = True
 
-    def update_settings(
-        self,
-        width: int | None = None,
-        height: int | None = None,
-        char_set: str | None = None,
-        color_mode: str | None = None,
-        intensity: int | None = None,
-        mono_color: tuple[int, int, int] | None = None,
-        speed: float | None = None,
-        aspect_lock: bool | None = None,
-    ):
-        with self._lock:
-            if width is not None:
-                self._width = width
-            if height is not None:
-                self._height = height
-            if char_set is not None:
-                self._char_set = char_set
-            if color_mode is not None:
-                self._color_mode = color_mode
-            if intensity is not None:
-                self._intensity = intensity
-            if mono_color is not None:
-                self._mono_color = mono_color
-            if speed is not None:
-                self._speed = speed
-            if aspect_lock is not None:
-                self._aspect_lock = aspect_lock
-            self._out_buf = None
-
     def apply_settings(self, rs: RenderSettings):
         """Apply a RenderSettings snapshot to the thread."""
-        self.update_settings(
-            width=rs.width,
-            height=rs.height,
-            char_set=rs.char_set,
-            color_mode=rs.color_mode,
-            intensity=rs.intensity,
-            mono_color=rs.mono_color,
-            speed=rs.speed,
-            aspect_lock=rs.aspect_lock,
-        )
+        with self._lock:
+            self._width = rs.width
+            self._height = rs.height
+            self._char_set = rs.char_set
+            self._color_mode = rs.color_mode
+            self._intensity = rs.intensity
+            self._brightness = rs.brightness
+            self._mono_color = rs.mono_color
+            self._bg_color = rs.bg_color
+            self._speed = rs.speed
+            self._aspect_lock = rs.aspect_lock
+            self._aspect_preset = rs.aspect_preset
+            self._loop = rs.loop
+            self._out_buf = None  # Invalidate buffer on settings change
 
     def get_settings(self) -> RenderSettings:
         """Return an immutable snapshot of the current render settings."""
@@ -137,9 +120,13 @@ class RenderThread(QThread):
                 char_set=self._char_set,
                 color_mode=self._color_mode,
                 intensity=self._intensity,
+                brightness=self._brightness,
                 mono_color=self._mono_color,
+                bg_color=self._bg_color,
                 speed=self._speed,
                 aspect_lock=self._aspect_lock,
+                aspect_preset=self._aspect_preset,
+                loop=self._loop,
             )
 
     def shutdown(self):
@@ -148,10 +135,6 @@ class RenderThread(QThread):
             self._stop_flag = True
             self._playing = False
         self.wait(5000)
-
-    def _get_preview_font_px(self, ascii_width: int) -> int:
-        """Delegate to the shared utility."""
-        return get_preview_font_px(ascii_width)
 
     def run(self):
         while True:
@@ -186,15 +169,14 @@ class RenderThread(QThread):
                 fh = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
                 self._video_aspect = (fw / fh) if fh > 0 else 1.77
                 self._current_frame = 0
-                total = self._total_frames
-                fps = self._fps
 
-
+            # Render first frame immediately
             self._render_current(cap)
 
-            while True:
-                loop_start = time.perf_counter()
+            # Deadline-based playback loop
+            next_frame_time = time.perf_counter()
 
+            while True:
                 with self._lock:
                     if self._stop_flag or self._shutdown:
                         break
@@ -204,53 +186,91 @@ class RenderThread(QThread):
                     speed = self._speed
                     fps_local = self._fps
 
+                # Handle seek requests
                 if seek is not None:
                     cap.set(cv2.CAP_PROP_POS_FRAMES, seek)
                     with self._lock:
                         self._current_frame = seek
                     self._render_current(cap)
+                    next_frame_time = time.perf_counter()
                     if not playing:
                         self.msleep(16)
                         continue
 
                 if not playing:
+                    next_frame_time = time.perf_counter()
                     self.msleep(16)
                     continue
 
-
+                # Check if the GUI has consumed the previous frame
                 with self._lock:
                     consumed = self._frame_consumed
                 if not consumed:
-                    self.msleep(4)
+                    self.msleep(2)
                     continue
 
+                # Deadline-based timing: compute how many frames behind we are
+                now = time.perf_counter()
+                frame_interval = (1.0 / fps_local) / speed if speed > 0 else 1.0 / fps_local
+
+                if now < next_frame_time:
+                    # We're ahead of schedule — sleep until the deadline
+                    sleep_ms = max(1, int((next_frame_time - now) * 1000))
+                    self.msleep(sleep_ms)
+                    continue
+
+                # How many frames should we have advanced by now?
+                frames_behind = int((now - next_frame_time) / frame_interval)
+
+                # Skip frames if we're more than 1 frame behind
+                if frames_behind > 1:
+                    skip = min(frames_behind - 1, 10)  # Cap skipping to avoid long hangs
+                    for _ in range(skip):
+                        ret, _ = cap.read()
+                        if not ret:
+                            break
+                        with self._lock:
+                            self._current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+
+                # Read and render the next frame
                 ret, frame = cap.read()
                 if not ret:
-                    self.playback_finished.emit()
                     with self._lock:
-                        self._playing = False
-                        self._seek_frame = 0
-                    continue
+                        loop = self._loop
+                    if loop:
+                        # Loop: seek back to start and keep playing
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                        with self._lock:
+                            self._current_frame = 0
+                        next_frame_time = time.perf_counter()
+                        continue
+                    else:
+                        self.playback_finished.emit()
+                        with self._lock:
+                            self._playing = False
+                            self._seek_frame = 0
+                        continue
 
                 with self._lock:
                     self._current_frame = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
 
                 self._do_render(frame)
 
-                target_delay = (1.0 / fps_local) / speed if speed > 0 else 1.0 / fps_local
-                elapsed = time.perf_counter() - loop_start
-                sleep_ms = max(1, int((target_delay - elapsed) * 1000))
-                self.msleep(sleep_ms)
+                # Advance deadline by one frame interval
+                next_frame_time += frame_interval
+                # If we've fallen too far behind, reset the deadline
+                if next_frame_time < now - frame_interval * 3:
+                    next_frame_time = now
 
             cap.release()
             with self._lock:
                 if self._shutdown:
                     return
-
                 if self._video_path == path:
                     self._video_path = ""
 
     def _render_current(self, cap: cv2.VideoCapture):
+        """Render the frame at the current position without advancing."""
         ret, frame = cap.read()
         if ret:
             pos = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
@@ -258,18 +278,22 @@ class RenderThread(QThread):
             self._do_render(frame)
 
     def _do_render(self, frame: np.ndarray):
+        """Convert a raw BGR frame to ASCII and emit the result as a QImage."""
         with self._lock:
             w = self._width
             h = self._height
             cs = self._char_set
+            ch = self._charset_hint
             cm = self._color_mode
             intensity = self._intensity
+            brightness = self._brightness
             mc = self._mono_color
+            bg = self._bg_color
             total = self._total_frames
             cur = self._current_frame
             aspect_lock = self._aspect_lock
             va = self._video_aspect
-            out_buf = self._out_buf  # Read under lock to avoid race with update_settings
+            out_buf = self._out_buf
 
         if aspect_lock and va > 0:
             h = max(1, int(w / va * 0.5))
@@ -277,29 +301,28 @@ class RenderThread(QThread):
         t0 = time.perf_counter()
 
         try:
-            chars_2d, colors_rgb = frame_to_ascii(frame, w, h, cs, cm, intensity, mc)
+            chars_2d, colors_rgb = frame_to_ascii(
+                frame, w, h, cs, cm, intensity, mc, brightness,
+            )
         except Exception as e:
             traceback.print_exc(file=sys.stderr)
             self.error_occurred.emit(f"Render error: {e}")
             return
 
+        font_px = get_preview_font_px(w)
+        atlas = get_atlas(cs, font_px, ch)
 
-        font_px = self._get_preview_font_px(w)
-        atlas = get_atlas(cs, font_px)
-
-
+        # Reuse or allocate output buffer
         img_h = h * atlas.cell_h
         img_w = w * atlas.cell_w
-        if (out_buf is not None and
-            out_buf.shape == (img_h, img_w, 3)):
-            pass  # Reuse existing buffer
+        if out_buf is not None and out_buf.shape == (img_h, img_w, 3):
+            pass
         else:
-            out_buf = np.full((img_h, img_w, 3), 14, dtype=np.uint8)
+            out_buf = np.full((img_h, img_w, 3), bg[0], dtype=np.uint8)
             with self._lock:
                 self._out_buf = out_buf
 
-        rgb_array = atlas.compose_frame(chars_2d, colors_rgb, (14, 14, 14), out_buf)
-
+        rgb_array = atlas.compose_frame(chars_2d, colors_rgb, bg, out_buf)
 
         qimg = QImage(
             rgb_array.data,
@@ -307,9 +330,7 @@ class RenderThread(QThread):
             rgb_array.shape[0],
             rgb_array.strides[0],
             QImage.Format.Format_RGB888,
-        )
-
-        qimg = qimg.copy()
+        ).copy()
 
         render_ms = (time.perf_counter() - t0) * 1000.0
 

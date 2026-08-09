@@ -17,7 +17,11 @@ class RenderSettings:
     char_set: str = " .,:;+*?%S#@"
     color_mode: str = "Colored"  # "Colored" | "Grayscale" | "Monochrome"
     intensity: int = 100
+    brightness: int = 100
     mono_color: tuple[int, int, int] = (255, 255, 255)
+    bg_color: tuple[int, int, int] = (14, 14, 14)
     speed: float = 1.0
     aspect_lock: bool = True
+    aspect_preset: str = "Source"  # "Source"|"1:1"|"4:3"|"3:2"|"16:9"|"16:10"|"21:9"|"Custom"
+    loop: bool = True
     font_size: int = 8

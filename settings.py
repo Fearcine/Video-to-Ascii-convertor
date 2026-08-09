@@ -1,3 +1,5 @@
+"""User settings persistence — load/save JSON to disk."""
+
 import json
 import os
 import sys
@@ -6,11 +8,15 @@ _DEFAULTS = {
     "width": 200,
     "height": 100,
     "aspect_lock": True,
+    "aspect_preset": "Source",
     "char_set_name": "Standard",
     "custom_chars": "",
     "color_mode": "Colored",
     "mono_color": [255, 255, 255],
+    "bg_color": [14, 14, 14],
     "intensity": 100,
+    "brightness": 100,
+    "loop": True,
     "speed": 1.0,
     "font_size": 8,
     "last_video": "",
@@ -28,7 +34,7 @@ def _settings_path() -> str:
 
 
 def load_settings() -> dict:
-    
+    """Load settings from disk, falling back to defaults for missing keys."""
     path = _settings_path()
     settings = dict(_DEFAULTS)
     if os.path.isfile(path):
@@ -45,7 +51,7 @@ def load_settings() -> dict:
 
 
 def save_settings(settings: dict):
-    
+    """Persist settings to disk as JSON."""
     path = _settings_path()
     try:
         with open(path, "w", encoding="utf-8") as f:

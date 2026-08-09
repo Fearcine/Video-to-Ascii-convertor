@@ -1,4 +1,8 @@
+"""VideoToASCII — Video & Image to Colored ASCII Art.
 
+Retro-styled tool UI inspired by Windows 2000 utilities and waifu2x.net.
+No emojis, plain labels, flat system colors.
+"""
 
 import sys
 import os
@@ -40,7 +44,7 @@ from export import (
     save_current_frame_html,
     export_full_html,
 )
-from ascii_renderer import CHAR_SETS, image_to_ascii, render_to_rgb
+from ascii_renderer import CHAR_SETS, image_to_ascii
 from glyph_atlas import get_atlas
 from shared_utils import get_preview_font_px
 from render_settings import RenderSettings
@@ -48,10 +52,224 @@ import numpy as np
 import cv2
 
 
+# ── Defaults ──────────────────────────────────────────────────────────────
+DEMO_VIDEO = "demo_bad_apple.mp4"
+
+ASPECT_PRESETS = {
+    "Source":  None,
+    "1:1":    1.0,
+    "4:3":    4 / 3,
+    "3:2":    3 / 2,
+    "16:9":   16 / 9,
+    "16:10":  16 / 10,
+    "21:9":   21 / 9,
+    "Custom": None,
+}
+
+# Default values for the Reset button
+_RESET_DEFAULTS = {
+    "width": 200,
+    "height": 100,
+    "aspect_preset": "Source",
+    "char_set_name": "Standard",
+    "custom_chars": "",
+    "color_mode": "Colored",
+    "intensity": 100,
+    "brightness": 100,
+    "bg_color": (14, 14, 14),
+    "mono_color": (255, 255, 255),
+    "speed": 1.0,
+    "loop": True,
+    "font_size": 8,
+}
+
+
+# ── Stylesheet ────────────────────────────────────────────────────────────
+# Flat system-gray palette inspired by Win95/2000 tools + waifu2x.net
+_BG = "#f0f0f0"
+_BG_DARK = "#d4d0c8"
+_BG_FIELD = "#ffffff"
+_BORDER = "#808080"
+_BORDER_LT = "#c0c0c0"
+_TEXT = "#000000"
+_TEXT_DIM = "#444444"
+_LINK = "#0000cc"
+_HIGHLIGHT = "#000080"
+_HIGHLIGHT_TEXT = "#ffffff"
+_BTN_FACE = "#e0e0e0"
+_BTN_HOVER = "#d0d0d0"
+_BTN_PRESSED = "#c0c0c0"
+_SUNKEN = "border: 2px inset #a0a0a0;"
+_RAISED = "border: 2px outset #d4d0c8;"
+
+_GLOBAL_STYLE = f"""
+QMainWindow {{
+    background: {_BG};
+}}
+"""
+
+_PANEL_STYLE = f"""
+QWidget {{
+    background: {_BG};
+    color: {_TEXT};
+    font-family: 'Tahoma', 'MS Sans Serif', 'Segoe UI', sans-serif;
+    font-size: 11px;
+}}
+QGroupBox {{
+    border: 2px groove {_BORDER_LT};
+    border-radius: 0px;
+    margin-top: 12px;
+    padding: 12px 8px 8px 8px;
+    font-weight: bold;
+    font-size: 11px;
+    color: {_TEXT};
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin;
+    left: 8px;
+    padding: 0 4px;
+    background: {_BG};
+}}
+QPushButton {{
+    background: {_BTN_FACE};
+    {_RAISED}
+    border-radius: 0px;
+    padding: 4px 12px;
+    color: {_TEXT};
+    font-size: 11px;
+    min-height: 18px;
+}}
+QPushButton:hover {{
+    background: {_BTN_HOVER};
+}}
+QPushButton:pressed {{
+    background: {_BTN_PRESSED};
+    {_SUNKEN}
+}}
+QPushButton:checked {{
+    background: {_BTN_PRESSED};
+    {_SUNKEN}
+}}
+QSlider::groove:horizontal {{
+    height: 4px;
+    background: #a0a0a0;
+    border: 1px inset #808080;
+}}
+QSlider::handle:horizontal {{
+    width: 11px;
+    height: 20px;
+    margin: -8px 0;
+    background: {_BTN_FACE};
+    border: 1px outset #d4d0c8;
+}}
+QSlider::sub-page:horizontal {{
+    background: {_HIGHLIGHT};
+}}
+QComboBox {{
+    background: {_BG_FIELD};
+    border: 1px inset #808080;
+    border-radius: 0px;
+    padding: 2px 6px;
+    color: {_TEXT};
+    font-size: 11px;
+    min-height: 18px;
+}}
+QComboBox QAbstractItemView {{
+    background: {_BG_FIELD};
+    color: {_TEXT};
+    selection-background-color: {_HIGHLIGHT};
+    selection-color: {_HIGHLIGHT_TEXT};
+    border: 1px solid {_BORDER};
+}}
+QComboBox::drop-down {{
+    border: none;
+    width: 18px;
+}}
+QComboBox::down-arrow {{
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid {_TEXT};
+    margin-right: 4px;
+}}
+QRadioButton {{
+    spacing: 6px;
+    color: {_TEXT};
+    font-size: 11px;
+}}
+QRadioButton::indicator {{
+    width: 13px;
+    height: 13px;
+}}
+QCheckBox {{
+    spacing: 6px;
+    color: {_TEXT};
+    font-size: 11px;
+}}
+QCheckBox::indicator {{
+    width: 13px;
+    height: 13px;
+}}
+QLineEdit {{
+    background: {_BG_FIELD};
+    border: 1px inset #808080;
+    border-radius: 0px;
+    padding: 2px 4px;
+    color: {_TEXT};
+    font-size: 11px;
+}}
+QLabel {{
+    color: {_TEXT};
+    font-size: 11px;
+}}
+QScrollArea {{
+    border: none;
+    background: {_BG};
+}}
+QScrollBar:vertical {{
+    background: {_BG};
+    width: 14px;
+    border: 1px inset #a0a0a0;
+}}
+QScrollBar::handle:vertical {{
+    background: {_BTN_FACE};
+    border: 1px outset #d4d0c8;
+    min-height: 20px;
+}}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
+    height: 14px;
+    background: {_BTN_FACE};
+    border: 1px outset #d4d0c8;
+}}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
+    background: {_BG};
+}}
+"""
+
+_STATUS_STYLE = f"""
+QStatusBar {{
+    background: {_BG_DARK};
+    color: {_TEXT_DIM};
+    font-size: 11px;
+    padding: 2px 6px;
+    border-top: 2px groove #c0c0c0;
+    font-family: 'Tahoma', 'MS Sans Serif', monospace;
+}}
+"""
+
+
+def _demo_video_path() -> str:
+    """Return the absolute path to the bundled demo video."""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), DEMO_VIDEO)
+
+
+# ── Main window ───────────────────────────────────────────────────────────
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("VideoToASCII — Video & Image to Colored ASCII Art")
+        self.setWindowTitle("VideoToASCII")
+        self.setStyleSheet(_GLOBAL_STYLE)
         self._settings = load_settings()
         self.resize(
             self._settings.get("window_width", 1400),
@@ -61,22 +279,23 @@ class MainWindow(QMainWindow):
 
         self._video_path = self._settings.get("last_video", "")
         self._image_path = ""
-        self._mode = "video"  # "video" or "image"
+        self._mode = "video"
         self._current_chars: np.ndarray | None = None
         self._current_colors: np.ndarray | None = None
         self._current_frame_no = 0
         self._total_frames = 0
         self._video_fps = 24.0
         self._mono_color = tuple(self._settings.get("mono_color", [255, 255, 255]))
+        self._bg_color = tuple(self._settings.get("bg_color", [14, 14, 14]))
         self._export_thread: ExportVideoThread | ExportMP4Thread | None = None
 
-
+        # Debounce timer
         self._settings_timer = QTimer(self)
         self._settings_timer.setSingleShot(True)
         self._settings_timer.setInterval(100)
         self._settings_timer.timeout.connect(self._apply_settings)
 
-
+        # Render thread
         self._render = RenderThread(self)
         self._render.frame_rendered.connect(self._on_frame_rendered)
         self._render.playback_finished.connect(self._on_playback_finished)
@@ -87,10 +306,22 @@ class MainWindow(QMainWindow):
         self._restore_settings()
         self._push_settings_to_thread()
 
+        # Load last video or demo
         if self._video_path and os.path.isfile(self._video_path):
             self._load_video(self._video_path)
+        elif os.path.isfile(_demo_video_path()):
+            self._load_video(_demo_video_path())
+            # Auto-play the demo
+            QTimer.singleShot(800, self._auto_play_demo)
 
+    def _auto_play_demo(self):
+        """Start playing the demo video automatically."""
+        if self._video_path and self._mode == "video":
+            self.btn_play.setChecked(True)
+            self.btn_play.setText("Pause")
+            self._render.play()
 
+    # ── UI construction ───────────────────────────────────────────────────
 
     def _build_ui(self):
         central = QWidget()
@@ -99,111 +330,125 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-
+        # ─── Left sidebar ─────────────────────────────────────────────────
         left_scroll = QScrollArea()
         left_scroll.setFixedWidth(290)
         left_scroll.setWidgetResizable(True)
         left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        left_scroll.setStyleSheet("QScrollArea { border: none; background: #1a1a2e; }")
 
         left_panel = QWidget()
-        left_panel.setStyleSheet(
-            "QWidget { background: #1a1a2e; color: #e0e0e0; }"
-            "QGroupBox { border: 1px solid #333; border-radius: 6px; margin-top: 10px; padding-top: 14px; font-weight: bold; color: #b0b0d0; }"
-            "QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }"
-            "QPushButton { background: #16213e; border: 1px solid #444; border-radius: 5px; padding: 7px 12px; color: #e0e0e0; font-weight: bold; }"
-            "QPushButton:hover { background: #1a3a5c; border-color: #66b2ff; }"
-            "QPushButton:pressed { background: #0f3460; }"
-            "QSlider::groove:horizontal { height: 6px; background: #333; border-radius: 3px; }"
-            "QSlider::handle:horizontal { width: 14px; margin: -4px 0; background: #4fc3f7; border-radius: 7px; }"
-            "QSlider::sub-page:horizontal { background: #4fc3f7; border-radius: 3px; }"
-            "QComboBox { background: #16213e; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; color: #e0e0e0; }"
-            "QComboBox QAbstractItemView { background: #1a1a2e; color: #e0e0e0; selection-background-color: #1a3a5c; }"
-            "QRadioButton { spacing: 6px; color: #e0e0e0; }"
-            "QCheckBox { spacing: 6px; color: #e0e0e0; }"
-            "QLineEdit { background: #16213e; border: 1px solid #444; border-radius: 4px; padding: 4px 6px; color: #e0e0e0; }"
-            "QLabel { color: #c0c0d8; }"
-        )
+        left_panel.setStyleSheet(_PANEL_STYLE)
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(10, 10, 10, 10)
+        left_layout.setContentsMargins(8, 8, 8, 8)
         left_layout.setSpacing(4)
 
+        # Title
+        title = QLabel("VideoToASCII")
+        title.setStyleSheet(
+            "font-size: 14px; font-weight: bold; color: #000080; "
+            "padding: 4px 0 2px 0;"
+        )
+        left_layout.addWidget(title)
+
+        subtitle = QLabel("Convert video and images to colored ASCII art")
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet("font-size: 10px; color: #444; padding: 0 0 4px 0;")
+        left_layout.addWidget(subtitle)
+
+        # Separator
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("QFrame { color: #a0a0a0; }")
+        left_layout.addWidget(sep)
+
+        # ─── Input ────────────────────────────────────────────────────────
+        grp_input = QGroupBox("Input")
+        input_layout = QVBoxLayout(grp_input)
+        input_layout.setSpacing(4)
 
         upload_row = QHBoxLayout()
-        self.btn_upload = QPushButton("📁  Video")
-        self.btn_upload.setStyleSheet(
-            "QPushButton { background: #0f3460; font-size: 13px; padding: 10px; }"
-            "QPushButton:hover { background: #1a5276; border-color: #5dade2; }"
-        )
+        upload_row.setSpacing(4)
+        self.btn_upload = QPushButton("Open Video...")
         self.btn_upload.clicked.connect(self._on_upload)
         upload_row.addWidget(self.btn_upload)
 
-        self.btn_upload_image = QPushButton("📷  Image")
-        self.btn_upload_image.setStyleSheet(
-            "QPushButton { background: #1b4332; font-size: 13px; padding: 10px; }"
-            "QPushButton:hover { background: #2d6a4f; border-color: #52b788; }"
-        )
+        self.btn_upload_image = QPushButton("Open Image...")
         self.btn_upload_image.clicked.connect(self._on_upload_image)
         upload_row.addWidget(self.btn_upload_image)
-        left_layout.addLayout(upload_row)
+        input_layout.addLayout(upload_row)
 
         self.lbl_filename = QLabel("No file loaded")
         self.lbl_filename.setWordWrap(True)
-        self.lbl_filename.setStyleSheet("color: #888; font-size: 11px; padding: 2px;")
-        left_layout.addWidget(self.lbl_filename)
+        self.lbl_filename.setStyleSheet("color: #444; font-size: 10px; padding: 1px;")
+        input_layout.addWidget(self.lbl_filename)
 
+        left_layout.addWidget(grp_input)
 
-        grp_res = QGroupBox("RESOLUTION")
+        # ─── Resolution ──────────────────────────────────────────────────
+        grp_res = QGroupBox("Resolution")
         res_layout = QVBoxLayout(grp_res)
+        res_layout.setSpacing(3)
 
-        res_layout.addWidget(QLabel("Width (chars):"))
+        ar_row = QHBoxLayout()
+        ar_row.addWidget(QLabel("Aspect ratio:"))
+        self.cmb_aspect = QComboBox()
+        self.cmb_aspect.addItems(list(ASPECT_PRESETS.keys()))
+        self.cmb_aspect.setCurrentText("Source")
+        self.cmb_aspect.currentTextChanged.connect(self._on_aspect_preset_changed)
+        ar_row.addWidget(self.cmb_aspect, 1)
+        res_layout.addLayout(ar_row)
+
+        w_row = QHBoxLayout()
+        w_row.addWidget(QLabel("Width (chars):"))
         self.slider_width = QSlider(Qt.Orientation.Horizontal)
         self.slider_width.setRange(40, 1000)
         self.slider_width.setSingleStep(10)
         self.slider_width.setPageStep(50)
         self.slider_width.setValue(200)
         self.lbl_width = QLabel("200")
-        w_row = QHBoxLayout()
-        w_row.addWidget(self.slider_width)
+        self.lbl_width.setFixedWidth(32)
+        self.lbl_width.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        w_row.addWidget(self.slider_width, 1)
         w_row.addWidget(self.lbl_width)
         res_layout.addLayout(w_row)
 
-        res_layout.addWidget(QLabel("Height (chars):"))
+        h_row = QHBoxLayout()
+        h_row.addWidget(QLabel("Height (chars):"))
         self.slider_height = QSlider(Qt.Orientation.Horizontal)
         self.slider_height.setRange(10, 500)
         self.slider_height.setSingleStep(5)
         self.slider_height.setPageStep(25)
         self.slider_height.setValue(100)
         self.lbl_height = QLabel("100")
-        h_row = QHBoxLayout()
-        h_row.addWidget(self.slider_height)
+        self.lbl_height.setFixedWidth(32)
+        self.lbl_height.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        h_row.addWidget(self.slider_height, 1)
         h_row.addWidget(self.lbl_height)
         res_layout.addLayout(h_row)
 
-        self.chk_aspect = QCheckBox("Lock aspect ratio")
-        self.chk_aspect.setChecked(True)
-        res_layout.addWidget(self.chk_aspect)
-
         self.slider_width.valueChanged.connect(self._on_width_changed)
         self.slider_height.valueChanged.connect(self._on_height_changed)
-        self.chk_aspect.toggled.connect(self._on_setting_changed)
 
         left_layout.addWidget(grp_res)
 
-
-        grp_chars = QGroupBox("CHARACTER SET")
+        # ─── Character Set ────────────────────────────────────────────────
+        grp_chars = QGroupBox("Character Set")
         chars_layout = QVBoxLayout(grp_chars)
+        chars_layout.setSpacing(3)
 
+        cs_row = QHBoxLayout()
+        cs_row.addWidget(QLabel("Preset:"))
         self.cmb_charset = QComboBox()
         self.cmb_charset.addItems([
             "Standard", "Dense", "Simple",
             "Japanese", "Chinese", "Best Mix",
             "Custom",
         ])
-        chars_layout.addWidget(self.cmb_charset)
+        cs_row.addWidget(self.cmb_charset, 1)
+        chars_layout.addLayout(cs_row)
 
         self.txt_custom_chars = QLineEdit()
-        self.txt_custom_chars.setPlaceholderText("Enter custom characters…")
+        self.txt_custom_chars.setPlaceholderText("Enter custom characters...")
         self.txt_custom_chars.setEnabled(False)
         chars_layout.addWidget(self.txt_custom_chars)
 
@@ -212,9 +457,10 @@ class MainWindow(QMainWindow):
 
         left_layout.addWidget(grp_chars)
 
-
-        grp_color = QGroupBox("COLOR MODE")
+        # ─── Color & Brightness ───────────────────────────────────────────
+        grp_color = QGroupBox("Color Mode")
         color_layout = QVBoxLayout(grp_color)
+        color_layout.setSpacing(3)
 
         self.radio_colored = QRadioButton("Colored")
         self.radio_gray = QRadioButton("Grayscale")
@@ -226,13 +472,16 @@ class MainWindow(QMainWindow):
         self.color_group.addButton(self.radio_gray)
         self.color_group.addButton(self.radio_mono)
 
-        color_layout.addWidget(self.radio_colored)
-        color_layout.addWidget(self.radio_gray)
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(self.radio_colored)
+        mode_row.addWidget(self.radio_gray)
+        color_layout.addLayout(mode_row)
 
         mono_row = QHBoxLayout()
         mono_row.addWidget(self.radio_mono)
         self.btn_mono_color = QPushButton()
-        self.btn_mono_color.setFixedSize(28, 28)
+        self.btn_mono_color.setFixedSize(22, 22)
+        self.btn_mono_color.setToolTip("Pick monochrome color")
         self._update_mono_button_color()
         self.btn_mono_color.clicked.connect(self._on_pick_mono_color)
         mono_row.addWidget(self.btn_mono_color)
@@ -241,44 +490,80 @@ class MainWindow(QMainWindow):
 
         self.color_group.buttonToggled.connect(self._on_setting_changed)
 
-        color_layout.addWidget(QLabel("Color intensity:"))
+        # Brightness
+        br_row = QHBoxLayout()
+        br_row.addWidget(QLabel("Brightness:"))
+        self.slider_brightness = QSlider(Qt.Orientation.Horizontal)
+        self.slider_brightness.setRange(20, 200)
+        self.slider_brightness.setValue(100)
+        self.lbl_brightness = QLabel("100%")
+        self.lbl_brightness.setFixedWidth(32)
+        self.lbl_brightness.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        br_row.addWidget(self.slider_brightness, 1)
+        br_row.addWidget(self.lbl_brightness)
+        color_layout.addLayout(br_row)
+        self.slider_brightness.valueChanged.connect(self._on_brightness_changed)
+
+        # Intensity
+        int_row = QHBoxLayout()
+        int_row.addWidget(QLabel("Intensity:"))
         self.slider_intensity = QSlider(Qt.Orientation.Horizontal)
         self.slider_intensity.setRange(0, 100)
         self.slider_intensity.setValue(100)
         self.lbl_intensity = QLabel("100%")
-        int_row = QHBoxLayout()
-        int_row.addWidget(self.slider_intensity)
+        self.lbl_intensity.setFixedWidth(32)
+        self.lbl_intensity.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        int_row.addWidget(self.slider_intensity, 1)
         int_row.addWidget(self.lbl_intensity)
         color_layout.addLayout(int_row)
         self.slider_intensity.valueChanged.connect(self._on_intensity_changed)
 
+        # Background color
+        bg_row = QHBoxLayout()
+        bg_row.addWidget(QLabel("Background:"))
+        self.btn_bg_color = QPushButton()
+        self.btn_bg_color.setFixedSize(22, 22)
+        self.btn_bg_color.setToolTip("Pick background color")
+        self._update_bg_button_color()
+        self.btn_bg_color.clicked.connect(self._on_pick_bg_color)
+        bg_row.addWidget(self.btn_bg_color)
+        bg_row.addStretch()
+        color_layout.addLayout(bg_row)
+
         left_layout.addWidget(grp_color)
 
-
-        grp_play = QGroupBox("PLAYBACK")
+        # ─── Playback ────────────────────────────────────────────────────
+        grp_play = QGroupBox("Playback")
         play_layout = QVBoxLayout(grp_play)
+        play_layout.setSpacing(3)
 
         btn_row = QHBoxLayout()
-        self.btn_play = QPushButton("▶  Play")
+        btn_row.setSpacing(4)
+        self.btn_play = QPushButton("Play")
         self.btn_play.setCheckable(True)
         self.btn_play.clicked.connect(self._on_play_toggle)
         btn_row.addWidget(self.btn_play)
 
-        self.btn_stop = QPushButton("■  Stop")
+        self.btn_stop = QPushButton("Stop")
         self.btn_stop.clicked.connect(self._on_stop)
         btn_row.addWidget(self.btn_stop)
         play_layout.addLayout(btn_row)
 
-        speed_row = QHBoxLayout()
-        speed_row.addWidget(QLabel("Speed:"))
+        opts_row = QHBoxLayout()
+        opts_row.addWidget(QLabel("Speed:"))
         self.cmb_speed = QComboBox()
-        self.cmb_speed.addItems(["0.25x", "0.5x", "1x", "2x"])
+        self.cmb_speed.addItems(["0.25x", "0.5x", "1x", "2x", "4x"])
         self.cmb_speed.setCurrentText("1x")
         self.cmb_speed.currentTextChanged.connect(self._on_setting_changed)
-        speed_row.addWidget(self.cmb_speed)
-        play_layout.addLayout(speed_row)
+        opts_row.addWidget(self.cmb_speed)
+        opts_row.addSpacing(8)
+        self.chk_loop = QCheckBox("Loop")
+        self.chk_loop.setChecked(True)
+        self.chk_loop.toggled.connect(self._on_setting_changed)
+        opts_row.addWidget(self.chk_loop)
+        play_layout.addLayout(opts_row)
 
-        play_layout.addWidget(QLabel("Frame:"))
+        play_layout.addWidget(QLabel("Seek:"))
         self.slider_seek = QSlider(Qt.Orientation.Horizontal)
         self.slider_seek.setRange(0, 1)
         self.slider_seek.setValue(0)
@@ -290,61 +575,64 @@ class MainWindow(QMainWindow):
 
         left_layout.addWidget(grp_play)
 
-
-        grp_out = QGroupBox("OUTPUT")
+        # ─── Export ──────────────────────────────────────────────────────
+        grp_out = QGroupBox("Export")
         out_layout = QVBoxLayout(grp_out)
+        out_layout.setSpacing(3)
 
         fs_row = QHBoxLayout()
-        fs_row.addWidget(QLabel("Export font size:"))
+        fs_row.addWidget(QLabel("Font size:"))
         self.slider_fontsize = QSlider(Qt.Orientation.Horizontal)
         self.slider_fontsize.setRange(4, 16)
         self.slider_fontsize.setValue(8)
         self.slider_fontsize.setToolTip(
-            "Controls font size for PNG/HTML/MP4 exports only.\n"
-            "Live preview auto-sizes based on character width."
+            "Font size for PNG/HTML/MP4 exports.\n"
+            "Preview auto-sizes based on grid width."
         )
         self.lbl_fontsize = QLabel("8px")
+        self.lbl_fontsize.setFixedWidth(28)
+        self.lbl_fontsize.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.slider_fontsize.valueChanged.connect(
             lambda v: self.lbl_fontsize.setText(f"{v}px")
         )
-        fs_row.addWidget(self.slider_fontsize)
+        fs_row.addWidget(self.slider_fontsize, 1)
         fs_row.addWidget(self.lbl_fontsize)
         out_layout.addLayout(fs_row)
 
-        self.btn_export_mp4 = QPushButton("🎬  Export as ASCII MP4")
-        self.btn_export_mp4.setStyleSheet(
-            "QPushButton { background: #1b4332; font-size: 12px; }"
-            "QPushButton:hover { background: #2d6a4f; border-color: #52b788; }"
-        )
+        self.btn_export_mp4 = QPushButton("Export as ASCII MP4")
         self.btn_export_mp4.clicked.connect(self._on_export_mp4)
         out_layout.addWidget(self.btn_export_mp4)
 
-        self.btn_export_png = QPushButton("🖼️  Export as ASCII PNG")
-        self.btn_export_png.setStyleSheet(
-            "QPushButton { background: #1b4332; font-size: 12px; }"
-            "QPushButton:hover { background: #2d6a4f; border-color: #52b788; }"
-        )
+        self.btn_export_png = QPushButton("Export as ASCII PNG")
         self.btn_export_png.clicked.connect(self._on_export_png)
         out_layout.addWidget(self.btn_export_png)
 
-        self.btn_save_video = QPushButton("💾  Save ASCII Text (.txt)")
+        self.btn_save_video = QPushButton("Save ASCII Text (.txt)")
         self.btn_save_video.clicked.connect(self._on_save_video)
         out_layout.addWidget(self.btn_save_video)
 
-        self.btn_save_frame = QPushButton("📄  Save Current Frame")
+        self.btn_save_frame = QPushButton("Save Current Frame")
         self.btn_save_frame.clicked.connect(self._on_save_frame)
         out_layout.addWidget(self.btn_save_frame)
 
-        self.btn_export_html = QPushButton("🌐  Export Frame as HTML")
+        self.btn_export_html = QPushButton("Export Frame as HTML")
         self.btn_export_html.clicked.connect(self._on_export_html)
         out_layout.addWidget(self.btn_export_html)
 
         left_layout.addWidget(grp_out)
+
+        # ─── Reset ───────────────────────────────────────────────────────
+        left_layout.addSpacing(4)
+        self.btn_reset = QPushButton("Reset to Defaults")
+        self.btn_reset.setToolTip("Reset all settings and load the demo video")
+        self.btn_reset.clicked.connect(self._on_reset)
+        left_layout.addWidget(self.btn_reset)
+
         left_layout.addStretch()
 
         left_scroll.setWidget(left_panel)
 
-
+        # ─── Right panel (preview) ────────────────────────────────────────
         right_panel = QWidget()
         right_panel.setStyleSheet("background: #0e0e0e;")
         right_layout = QVBoxLayout(right_panel)
@@ -356,29 +644,31 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self.preview)
 
         self.status_bar = QStatusBar()
-        self.status_bar.setStyleSheet(
-            "QStatusBar { background: #111; color: #999; font-size: 11px; "
-            "padding: 2px 8px; border-top: 1px solid #333; }"
-        )
-        self.status_bar.showMessage("Ready — load a video to begin")
+        self.status_bar.setStyleSheet(_STATUS_STYLE)
+        self.status_bar.showMessage("Ready")
         right_layout.addWidget(self.status_bar)
 
+        # Assemble
         main_layout.addWidget(left_scroll)
 
         divider = QFrame()
         divider.setFrameShape(QFrame.Shape.VLine)
-        divider.setStyleSheet("QFrame { color: #333; }")
+        divider.setStyleSheet("QFrame { color: #808080; }")
         main_layout.addWidget(divider)
 
         main_layout.addWidget(right_panel, 1)
 
-
+    # ── Settings helpers ──────────────────────────────────────────────────
 
     def _restore_settings(self):
         s = self._settings
         self.slider_width.setValue(s.get("width", 200))
         self.slider_height.setValue(s.get("height", 100))
-        self.chk_aspect.setChecked(s.get("aspect_lock", True))
+
+        preset = s.get("aspect_preset", "Source")
+        idx = self.cmb_aspect.findText(preset)
+        if idx >= 0:
+            self.cmb_aspect.setCurrentIndex(idx)
 
         idx = self.cmb_charset.findText(s.get("char_set_name", "Standard"))
         if idx >= 0:
@@ -392,7 +682,13 @@ class MainWindow(QMainWindow):
 
         self._mono_color = tuple(s.get("mono_color", [255, 255, 255]))
         self._update_mono_button_color()
-        self.slider_intensity.setValue(s.get("intensity", 80))
+        self._bg_color = tuple(s.get("bg_color", [14, 14, 14]))
+        self._update_bg_button_color()
+        self._update_preview_bg()
+
+        self.slider_intensity.setValue(s.get("intensity", 100))
+        self.slider_brightness.setValue(s.get("brightness", 100))
+        self.chk_loop.setChecked(s.get("loop", True))
 
         speed_str = f"{s.get('speed', 1.0)}x"
         idx = self.cmb_speed.findText(speed_str)
@@ -405,12 +701,16 @@ class MainWindow(QMainWindow):
         self._settings.update({
             "width": self.slider_width.value(),
             "height": self.slider_height.value(),
-            "aspect_lock": self.chk_aspect.isChecked(),
+            "aspect_lock": self.cmb_aspect.currentText() != "Custom",
+            "aspect_preset": self.cmb_aspect.currentText(),
             "char_set_name": self.cmb_charset.currentText(),
             "custom_chars": self.txt_custom_chars.text(),
             "color_mode": self._get_color_mode(),
             "mono_color": list(self._mono_color),
+            "bg_color": list(self._bg_color),
             "intensity": self.slider_intensity.value(),
+            "brightness": self.slider_brightness.value(),
+            "loop": self.chk_loop.isChecked(),
             "speed": self._get_speed(),
             "font_size": self.slider_fontsize.value(),
             "last_video": self._video_path,
@@ -419,14 +719,15 @@ class MainWindow(QMainWindow):
         })
         save_settings(self._settings)
 
-
-
     def _get_char_set(self) -> str:
         name = self.cmb_charset.currentText()
         if name == "Custom":
             custom = self.txt_custom_chars.text().strip()
             return custom if custom else CHAR_SETS["Standard"]
         return CHAR_SETS.get(name, CHAR_SETS["Standard"])
+
+    def _get_charset_hint(self) -> str:
+        return self.cmb_charset.currentText()
 
     def _get_color_mode(self) -> str:
         if self.radio_colored.isChecked():
@@ -444,31 +745,46 @@ class MainWindow(QMainWindow):
     def _update_mono_button_color(self):
         r, g, b = self._mono_color
         self.btn_mono_color.setStyleSheet(
-            f"background-color: rgb({r},{g},{b}); border: 1px solid #666; border-radius: 4px;"
+            f"background-color: rgb({r},{g},{b}); "
+            f"border: 1px inset #808080; min-width: 20px; min-height: 20px;"
         )
 
+    def _update_bg_button_color(self):
+        r, g, b = self._bg_color
+        self.btn_bg_color.setStyleSheet(
+            f"background-color: rgb({r},{g},{b}); "
+            f"border: 1px inset #808080; min-width: 20px; min-height: 20px;"
+        )
+
+    def _update_preview_bg(self):
+        self.preview.set_bg_color(*self._bg_color)
+
     def _get_render_settings(self) -> RenderSettings:
-        """Build an immutable RenderSettings snapshot from the current UI state."""
+        preset = self.cmb_aspect.currentText()
+        aspect_lock = preset != "Custom"
         return RenderSettings(
             width=self.slider_width.value(),
             height=self.slider_height.value(),
             char_set=self._get_char_set(),
             color_mode=self._get_color_mode(),
             intensity=self.slider_intensity.value(),
+            brightness=self.slider_brightness.value(),
             mono_color=self._mono_color,
+            bg_color=self._bg_color,
             speed=self._get_speed(),
-            aspect_lock=self.chk_aspect.isChecked(),
+            aspect_lock=aspect_lock,
+            aspect_preset=preset,
+            loop=self.chk_loop.isChecked(),
             font_size=self.slider_fontsize.value(),
         )
 
     def _push_settings_to_thread(self):
-        rs = self._get_render_settings()
-        self._render.apply_settings(rs)
+        self._render.apply_settings(self._get_render_settings())
 
-
+    # ── Event handlers ────────────────────────────────────────────────────
 
     def _on_setting_changed(self, *_args):
-        self._settings_timer.start()  # Restart debounce
+        self._settings_timer.start()
 
     def _apply_settings(self):
         self._push_settings_to_thread()
@@ -476,7 +792,44 @@ class MainWindow(QMainWindow):
         if self._mode == "image" and self._image_path:
             self._render_image()
 
+    def _on_reset(self):
+        """Reset all settings to defaults and load the demo video."""
+        d = _RESET_DEFAULTS
 
+        self.slider_width.setValue(d["width"])
+        self.slider_height.setValue(d["height"])
+        self.cmb_aspect.setCurrentText(d["aspect_preset"])
+        self.cmb_charset.setCurrentText(d["char_set_name"])
+        self.txt_custom_chars.setText(d["custom_chars"])
+
+        {"Colored": self.radio_colored, "Grayscale": self.radio_gray}.get(
+            d["color_mode"], self.radio_mono
+        ).setChecked(True)
+
+        self.slider_intensity.setValue(d["intensity"])
+        self.slider_brightness.setValue(d["brightness"])
+        self._mono_color = d["mono_color"]
+        self._update_mono_button_color()
+        self._bg_color = d["bg_color"]
+        self._update_bg_button_color()
+        self._update_preview_bg()
+        self.cmb_speed.setCurrentText(f"{d['speed']}x")
+        self.chk_loop.setChecked(d["loop"])
+        self.slider_fontsize.setValue(d["font_size"])
+
+        self._push_settings_to_thread()
+        self._persist_settings()
+
+        # Load demo video
+        demo = _demo_video_path()
+        if os.path.isfile(demo):
+            self._load_video(demo)
+            QTimer.singleShot(600, self._auto_play_demo)
+        else:
+            QMessageBox.information(
+                self, "Demo Not Found",
+                f"Demo video not found:\n{demo}\n\nSettings have been reset.",
+            )
 
     def _on_upload(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -498,19 +851,18 @@ class MainWindow(QMainWindow):
         self._image_path = path
         self._video_path = ""
         self._mode = "image"
-        self.lbl_filename.setText(f"🖼️ {os.path.basename(path)}")
-
+        self.lbl_filename.setText(os.path.basename(path))
 
         self.btn_play.setEnabled(False)
         self.btn_stop.setEnabled(False)
         self.slider_seek.setEnabled(False)
         self.cmb_speed.setEnabled(False)
+        self.chk_loop.setEnabled(False)
         self.btn_export_mp4.setEnabled(False)
         self.btn_save_video.setEnabled(False)
         self.btn_export_png.setEnabled(True)
 
         self._render.stop()
-
         self._render_image()
         self._persist_settings()
 
@@ -525,24 +877,33 @@ class MainWindow(QMainWindow):
                 return
 
             h_img, w_img = img_bgr.shape[:2]
-            aspect = w_img / h_img if h_img > 0 else 1.77
+            source_aspect = w_img / h_img if h_img > 0 else 1.77
+
+            preset = self.cmb_aspect.currentText()
+            if preset == "Custom":
+                aspect = None
+            elif preset == "Source":
+                aspect = source_aspect
+            else:
+                aspect = ASPECT_PRESETS.get(preset, source_aspect)
 
             w = self.slider_width.value()
-            h = max(1, int(w / aspect * 0.5))
 
             chars_2d, colors_rgb = image_to_ascii(
                 self._image_path, w,
                 self._get_char_set(), self._get_color_mode(),
                 self.slider_intensity.value(), self._mono_color,
                 aspect_ratio=aspect,
+                brightness=self.slider_brightness.value(),
             )
+            h = chars_2d.shape[0]
 
             self._current_chars = chars_2d
             self._current_colors = colors_rgb
 
             font_px = get_preview_font_px(w)
-            atlas = get_atlas(self._get_char_set(), font_px)
-            rgb_array = atlas.compose_frame(chars_2d, colors_rgb, (14, 14, 14))
+            atlas = get_atlas(self._get_char_set(), font_px, self._get_charset_hint())
+            rgb_array = atlas.compose_frame(chars_2d, colors_rgb, self._bg_color)
 
             qimg = QImage(
                 rgb_array.data, rgb_array.shape[1], rgb_array.shape[0],
@@ -551,8 +912,8 @@ class MainWindow(QMainWindow):
 
             self.preview.update_image(qimg)
             self.status_bar.showMessage(
-                f"  🖼️ {os.path.basename(self._image_path)}  |  "
-                f"{w}×{h} chars  |  Image mode"
+                f"{os.path.basename(self._image_path)} | "
+                f"{w}x{h} chars | Image mode"
             )
         except Exception as e:
             traceback.print_exc(file=sys.stderr)
@@ -564,16 +925,14 @@ class MainWindow(QMainWindow):
         self._mode = "video"
         self.lbl_filename.setText(os.path.basename(path))
 
-
         self.btn_play.setEnabled(True)
         self.btn_stop.setEnabled(True)
         self.slider_seek.setEnabled(True)
         self.cmb_speed.setEnabled(True)
+        self.chk_loop.setEnabled(True)
         self.btn_export_mp4.setEnabled(True)
         self.btn_save_video.setEnabled(True)
         self.btn_export_png.setEnabled(True)
-
-        self.chk_aspect.setChecked(True)
 
         self._render.load_video(path)
         QTimer.singleShot(500, self._update_video_info)
@@ -587,6 +946,22 @@ class MainWindow(QMainWindow):
         self.slider_seek.setValue(0)
         self._update_status(0, self._total_frames, 0.0)
 
+    def _on_aspect_preset_changed(self, text: str):
+        is_custom = (text == "Custom")
+        self.slider_height.setEnabled(is_custom)
+
+        if not is_custom and text != "Source":
+            ratio = ASPECT_PRESETS.get(text)
+            if ratio:
+                w = self.slider_width.value()
+                h = max(10, int(w / ratio * 0.5))
+                self.slider_height.blockSignals(True)
+                self.slider_height.setValue(h)
+                self.lbl_height.setText(str(h))
+                self.slider_height.blockSignals(False)
+
+        self._on_setting_changed()
+
     def _on_width_changed(self, val: int):
         snapped = round(val / 10) * 10
         if snapped != val:
@@ -594,6 +969,17 @@ class MainWindow(QMainWindow):
             self.slider_width.setValue(snapped)
             self.slider_width.blockSignals(False)
         self.lbl_width.setText(str(snapped))
+
+        preset = self.cmb_aspect.currentText()
+        if preset != "Custom" and preset != "Source":
+            ratio = ASPECT_PRESETS.get(preset)
+            if ratio:
+                h = max(10, int(snapped / ratio * 0.5))
+                self.slider_height.blockSignals(True)
+                self.slider_height.setValue(h)
+                self.lbl_height.setText(str(h))
+                self.slider_height.blockSignals(False)
+
         self._on_setting_changed()
 
     def _on_height_changed(self, val: int):
@@ -613,6 +999,10 @@ class MainWindow(QMainWindow):
         self.lbl_intensity.setText(f"{val}%")
         self._on_setting_changed()
 
+    def _on_brightness_changed(self, val: int):
+        self.lbl_brightness.setText(f"{val}%")
+        self._on_setting_changed()
+
     def _on_pick_mono_color(self):
         color = QColorDialog.getColor(QColor(*self._mono_color), self, "Pick Monochrome Color")
         if color.isValid():
@@ -620,21 +1010,29 @@ class MainWindow(QMainWindow):
             self._update_mono_button_color()
             self._on_setting_changed()
 
+    def _on_pick_bg_color(self):
+        color = QColorDialog.getColor(QColor(*self._bg_color), self, "Pick Background Color")
+        if color.isValid():
+            self._bg_color = (color.red(), color.green(), color.blue())
+            self._update_bg_button_color()
+            self._update_preview_bg()
+            self._on_setting_changed()
+
     def _on_play_toggle(self, checked: bool):
         if not self._video_path:
             self.btn_play.setChecked(False)
-            QMessageBox.information(self, "No Video", "Please upload a video first.")
+            QMessageBox.information(self, "No Video", "Please open a video first.")
             return
         if checked:
-            self.btn_play.setText("❚❚  Pause")
+            self.btn_play.setText("Pause")
             self._render.play()
         else:
-            self.btn_play.setText("▶  Play")
+            self.btn_play.setText("Play")
             self._render.pause()
 
     def _on_stop(self):
         self.btn_play.setChecked(False)
-        self.btn_play.setText("▶  Play")
+        self.btn_play.setText("Play")
         self._render.stop()
         self.slider_seek.setValue(0)
 
@@ -676,27 +1074,29 @@ class MainWindow(QMainWindow):
         self._update_status(frame_no, total, render_ms)
 
     def _update_status(self, frame_no: int, total: int, render_ms: float):
-        name = os.path.basename(self._video_path) if self._video_path else "—"
+        name = os.path.basename(self._video_path) if self._video_path else "-"
         w = self.slider_width.value()
         h = self.slider_height.value()
+        loop_str = "Loop" if self.chk_loop.isChecked() else ""
         self.status_bar.showMessage(
-            f"  {name}  |  Frame {frame_no}/{total}  |  "
-            f"FPS: {self._video_fps:.1f}  |  {w}×{h} chars  |  "
-            f"Render: {render_ms:.1f} ms"
+            f"{name} | Frame {frame_no}/{total} | "
+            f"FPS: {self._video_fps:.1f} | {w}x{h} chars | "
+            f"Render: {render_ms:.1f}ms"
+            + (f" | {loop_str}" if loop_str else "")
         )
 
     def _on_playback_finished(self):
         self.btn_play.setChecked(False)
-        self.btn_play.setText("▶  Play")
+        self.btn_play.setText("Play")
 
     def _on_error(self, msg: str):
         QMessageBox.warning(self, "Error", msg)
 
-
+    # ── Export handlers ───────────────────────────────────────────────────
 
     def _on_export_mp4(self):
         if not self._video_path:
-            QMessageBox.information(self, "No Video", "Please upload a video first.")
+            QMessageBox.information(self, "No Video", "Please open a video first.")
             return
 
         path, _ = QFileDialog.getSaveFileName(
@@ -705,13 +1105,14 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        progress = QProgressDialog("Converting to ASCII video…", "Cancel", 0, 100, self)
+        progress = QProgressDialog("Rendering ASCII video...", "Cancel", 0, 100, self)
         progress.setWindowTitle("Exporting MP4")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
-        progress.setMinimumWidth(400)
+        progress.setMinimumWidth(350)
         progress.setValue(0)
 
+        preset = self.cmb_aspect.currentText()
         self._export_thread = ExportMP4Thread(
             video_path=self._video_path,
             output_path=path,
@@ -722,7 +1123,10 @@ class MainWindow(QMainWindow):
             intensity=self.slider_intensity.value(),
             mono_color=self._mono_color,
             font_size=self.slider_fontsize.value(),
-            aspect_lock=self.chk_aspect.isChecked(),
+            aspect_lock=preset != "Custom",
+            bg_color=self._bg_color,
+            brightness=self.slider_brightness.value(),
+            charset_hint=self._get_charset_hint(),
             parent=self,
         )
 
@@ -737,11 +1141,9 @@ class MainWindow(QMainWindow):
         self._export_thread.finished.connect(progress.close)
         self._export_thread.start()
 
-
-
     def _on_export_png(self):
         if self._current_chars is None:
-            QMessageBox.information(self, "No Frame", "No frame to export. Load a video or image first.")
+            QMessageBox.information(self, "No Frame", "No frame to export.")
             return
 
         path, _ = QFileDialog.getSaveFileName(
@@ -752,9 +1154,9 @@ class MainWindow(QMainWindow):
 
         try:
             font_size = self.slider_fontsize.value()
-            atlas = get_atlas(self._get_char_set(), font_size)
+            atlas = get_atlas(self._get_char_set(), font_size, self._get_charset_hint())
             rgb_frame = atlas.compose_frame(
-                self._current_chars, self._current_colors, (17, 17, 17)
+                self._current_chars, self._current_colors, self._bg_color,
             )
             bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
             cv2.imwrite(path, bgr_frame)
@@ -763,11 +1165,9 @@ class MainWindow(QMainWindow):
             traceback.print_exc(file=sys.stderr)
             QMessageBox.warning(self, "Export Error", str(e))
 
-
-
     def _on_save_video(self):
         if not self._video_path:
-            QMessageBox.information(self, "No Video", "Please upload a video first.")
+            QMessageBox.information(self, "No Video", "Please open a video first.")
             return
 
         path, _ = QFileDialog.getSaveFileName(
@@ -776,12 +1176,13 @@ class MainWindow(QMainWindow):
         if not path:
             return
 
-        progress = QProgressDialog("Exporting ASCII text…", "Cancel", 0, 100, self)
+        progress = QProgressDialog("Exporting ASCII text...", "Cancel", 0, 100, self)
         progress.setWindowTitle("Exporting")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.setValue(0)
 
+        preset = self.cmb_aspect.currentText()
         self._export_thread = ExportVideoThread(
             video_path=self._video_path,
             output_path=path,
@@ -791,7 +1192,8 @@ class MainWindow(QMainWindow):
             color_mode=self._get_color_mode(),
             intensity=self.slider_intensity.value(),
             mono_color=self._mono_color,
-            aspect_lock=self.chk_aspect.isChecked(),
+            aspect_lock=preset != "Custom",
+            brightness=self.slider_brightness.value(),
             parent=self,
         )
 
@@ -806,11 +1208,9 @@ class MainWindow(QMainWindow):
         self._export_thread.finished.connect(progress.close)
         self._export_thread.start()
 
-
-
     def _on_save_frame(self):
         if self._current_chars is None:
-            QMessageBox.information(self, "No Frame", "No frame to save. Play a video first.")
+            QMessageBox.information(self, "No Frame", "No frame to save.")
             return
         path, filt = QFileDialog.getSaveFileName(
             self, "Save Current Frame", "",
@@ -821,7 +1221,8 @@ class MainWindow(QMainWindow):
         try:
             if path.lower().endswith(".html") or "HTML" in filt:
                 save_current_frame_html(
-                    self._current_chars, self._current_colors, path, self.slider_fontsize.value()
+                    self._current_chars, self._current_colors,
+                    path, self.slider_fontsize.value(), self._bg_color,
                 )
             else:
                 save_current_frame_txt(self._current_chars, path)
@@ -831,7 +1232,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Save Error", str(e))
 
     def _on_export_html(self):
-        # Works in both video and image mode
         if not self._video_path and not self._image_path:
             QMessageBox.information(self, "No Content", "Please load a video or image first.")
             return
@@ -841,17 +1241,16 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
+            preset = self.cmb_aspect.currentText()
             if self._mode == "image" or not self._video_path:
-                # Image mode: export from current rendered data
                 if self._current_chars is None:
-                    QMessageBox.information(self, "No Frame", "No frame to export. Load an image first.")
+                    QMessageBox.information(self, "No Frame", "No frame to export.")
                     return
                 save_current_frame_html(
                     self._current_chars, self._current_colors,
-                    path, self.slider_fontsize.value(),
+                    path, self.slider_fontsize.value(), self._bg_color,
                 )
             else:
-                # Video mode: re-render from video file at current frame
                 export_full_html(
                     video_path=self._video_path,
                     output_path=path,
@@ -863,20 +1262,21 @@ class MainWindow(QMainWindow):
                     intensity=self.slider_intensity.value(),
                     mono_color=self._mono_color,
                     font_size=self.slider_fontsize.value(),
-                    aspect_lock=self.chk_aspect.isChecked(),
+                    aspect_lock=preset != "Custom",
+                    bg_color=self._bg_color,
+                    brightness=self.slider_brightness.value(),
                 )
             QMessageBox.information(self, "Exported", f"HTML exported to:\n{path}")
         except Exception as e:
             traceback.print_exc(file=sys.stderr)
             QMessageBox.warning(self, "Export Error", str(e))
 
-
+    # ── Cleanup ───────────────────────────────────────────────────────────
 
     def closeEvent(self, event):
         try:
             self._persist_settings()
         except Exception as e:
-            import traceback
             print(f"Warning: Failed to persist settings: {e}", file=sys.stderr)
             traceback.print_exc(file=sys.stderr)
         self._render.shutdown()
@@ -886,6 +1286,7 @@ class MainWindow(QMainWindow):
         event.accept()
 
 
+# ── Entry point ───────────────────────────────────────────────────────────
 
 def main():
     app = QApplication(sys.argv)
@@ -893,18 +1294,18 @@ def main():
 
     from PyQt6.QtGui import QPalette
     palette = QPalette()
-    palette.setColor(QPalette.ColorRole.Window, QColor(26, 26, 46))
-    palette.setColor(QPalette.ColorRole.WindowText, QColor(224, 224, 224))
-    palette.setColor(QPalette.ColorRole.Base, QColor(14, 14, 14))
-    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(30, 30, 50))
-    palette.setColor(QPalette.ColorRole.Text, QColor(224, 224, 224))
-    palette.setColor(QPalette.ColorRole.Button, QColor(22, 33, 62))
-    palette.setColor(QPalette.ColorRole.ButtonText, QColor(224, 224, 224))
-    palette.setColor(QPalette.ColorRole.Highlight, QColor(79, 195, 247))
-    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(0, 0, 0))
+    palette.setColor(QPalette.ColorRole.Window, QColor(240, 240, 240))
+    palette.setColor(QPalette.ColorRole.WindowText, QColor(0, 0, 0))
+    palette.setColor(QPalette.ColorRole.Base, QColor(255, 255, 255))
+    palette.setColor(QPalette.ColorRole.AlternateBase, QColor(233, 233, 233))
+    palette.setColor(QPalette.ColorRole.Text, QColor(0, 0, 0))
+    palette.setColor(QPalette.ColorRole.Button, QColor(224, 224, 224))
+    palette.setColor(QPalette.ColorRole.ButtonText, QColor(0, 0, 0))
+    palette.setColor(QPalette.ColorRole.Highlight, QColor(0, 0, 128))
+    palette.setColor(QPalette.ColorRole.HighlightedText, QColor(255, 255, 255))
     app.setPalette(palette)
 
-    app.setFont(QFont("Segoe UI", 10))
+    app.setFont(QFont("Tahoma", 9))
 
     icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
     if os.path.isfile(icon_path):

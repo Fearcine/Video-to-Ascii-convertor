@@ -1,3 +1,5 @@
+"""Export pipelines: save ASCII art as text, HTML, PNG, or MP4 video."""
+
 import os
 import sys
 import traceback
@@ -13,7 +15,7 @@ from glyph_atlas import get_atlas
 
 
 class ExportVideoThread(QThread):
-   
+    """Export every frame of a video as plain-text ASCII to a .txt file."""
 
     progress = pyqtSignal(int)
     finished_ok = pyqtSignal(str)
@@ -30,6 +32,7 @@ class ExportVideoThread(QThread):
         intensity: int,
         mono_color: tuple[int, int, int],
         aspect_lock: bool,
+        brightness: int = 100,
         parent=None,
     ):
         super().__init__(parent)
@@ -42,6 +45,7 @@ class ExportVideoThread(QThread):
         self._intensity = intensity
         self._mono_color = mono_color
         self._aspect_lock = aspect_lock
+        self._brightness = brightness
         self._cancelled = False
 
     def cancel(self):
@@ -71,7 +75,8 @@ class ExportVideoThread(QThread):
                         break
                     chars, colors = frame_to_ascii(
                         frame, w, h, self._char_set,
-                        self._color_mode, self._intensity, self._mono_color,
+                        self._color_mode, self._intensity,
+                        self._mono_color, self._brightness,
                     )
                     text = frame_to_plain_text(chars)
                     f.write("FRAME_START\n")
@@ -97,7 +102,8 @@ class ExportVideoThread(QThread):
 
 
 class ExportMP4Thread(QThread):
-    
+    """Render every frame of a video as ASCII art and write to an MP4 file."""
+
     progress = pyqtSignal(int)
     finished_ok = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
@@ -114,6 +120,9 @@ class ExportMP4Thread(QThread):
         mono_color: tuple[int, int, int],
         font_size: int,
         aspect_lock: bool,
+        bg_color: tuple[int, int, int] = (17, 17, 17),
+        brightness: int = 100,
+        charset_hint: str = "",
         parent=None,
     ):
         super().__init__(parent)
@@ -127,6 +136,9 @@ class ExportMP4Thread(QThread):
         self._mono_color = mono_color
         self._font_size = font_size
         self._aspect_lock = aspect_lock
+        self._bg_color = bg_color
+        self._brightness = brightness
+        self._charset_hint = charset_hint
         self._cancelled = False
 
     def cancel(self):
@@ -152,16 +164,13 @@ class ExportMP4Thread(QThread):
             if self._aspect_lock and va > 0:
                 ascii_h = max(1, int(ascii_w / va * 0.5))
 
+            atlas = get_atlas(self._char_set, self._font_size, self._charset_hint)
 
-            atlas = get_atlas(self._char_set, self._font_size)
-
-
+            # Output pixel dimensions (must be even for H.264)
             out_px_h = ascii_h * atlas.cell_h
             out_px_w = ascii_w * atlas.cell_w
-
-
-            out_px_w = out_px_w if out_px_w % 2 == 0 else out_px_w + 1
-            out_px_h = out_px_h if out_px_h % 2 == 0 else out_px_h + 1
+            out_px_w += out_px_w % 2
+            out_px_h += out_px_h % 2
 
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             writer = cv2.VideoWriter(self._output_path, fourcc, src_fps, (out_px_w, out_px_h))
@@ -169,8 +178,11 @@ class ExportMP4Thread(QThread):
                 self.error_occurred.emit("Failed to create output video writer.")
                 return
 
-
-            rgb_buf = np.full((ascii_h * atlas.cell_h, ascii_w * atlas.cell_w, 3), 17, dtype=np.uint8)
+            # Reusable frame buffer
+            rgb_buf = np.full(
+                (ascii_h * atlas.cell_h, ascii_w * atlas.cell_w, 3),
+                self._bg_color[0], dtype=np.uint8,
+            )
 
             n = 0
             while not self._cancelled:
@@ -180,15 +192,15 @@ class ExportMP4Thread(QThread):
 
                 chars, colors = frame_to_ascii(
                     frame, ascii_w, ascii_h,
-                    self._char_set, self._color_mode, self._intensity, self._mono_color,
+                    self._char_set, self._color_mode,
+                    self._intensity, self._mono_color,
+                    self._brightness,
                 )
 
-
-                rgb_frame = atlas.compose_frame(chars, colors, (17, 17, 17), rgb_buf)
+                rgb_frame = atlas.compose_frame(chars, colors, self._bg_color, rgb_buf)
                 bgr_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
 
-                # Pad if needed
-                padded = self._pad_frame(bgr_frame, out_px_w, out_px_h)
+                padded = self._pad_frame(bgr_frame, out_px_w, out_px_h, self._bg_color)
                 writer.write(padded)
 
                 n += 1
@@ -217,17 +229,23 @@ class ExportMP4Thread(QThread):
                 cap.release()
 
     @staticmethod
-    def _pad_frame(frame: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
-       
+    def _pad_frame(
+        frame: np.ndarray,
+        target_w: int,
+        target_h: int,
+        bg_color: tuple[int, int, int] = (17, 17, 17),
+    ) -> np.ndarray:
+        """Pad frame to target dimensions if needed (even size for codec)."""
         h, w = frame.shape[:2]
         if w == target_w and h == target_h:
             return frame
-        padded = np.full((target_h, target_w, 3), 17, dtype=np.uint8)
+        padded = np.full((target_h, target_w, 3), bg_color[0], dtype=np.uint8)
         padded[:h, :w] = frame
         return padded
 
+
 def save_current_frame_txt(chars_2d: np.ndarray, output_path: str):
-    
+    """Save a single ASCII frame as plain text."""
     text = frame_to_plain_text(chars_2d)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(text)
@@ -238,9 +256,10 @@ def save_current_frame_html(
     colors_rgb: np.ndarray,
     output_path: str,
     font_size: int = 8,
+    bg_color: tuple[int, int, int] = (17, 17, 17),
 ):
-    
-    html = frame_to_html(chars_2d, colors_rgb, font_size)
+    """Save a single ASCII frame as a styled HTML page."""
+    html = frame_to_html(chars_2d, colors_rgb, font_size, bg_color)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -257,8 +276,10 @@ def export_full_html(
     mono_color: tuple[int, int, int],
     font_size: int,
     aspect_lock: bool,
+    bg_color: tuple[int, int, int] = (17, 17, 17),
+    brightness: int = 100,
 ):
-    
+    """Extract a single video frame and export as HTML ASCII art."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise IOError(f"Cannot open: {video_path}")
@@ -275,7 +296,10 @@ def export_full_html(
     if not ret:
         raise IOError(f"Cannot read frame {frame_no}")
 
-    chars, colors = frame_to_ascii(frame, width, height, char_set, color_mode, intensity, mono_color)
-    html = frame_to_html(chars, colors, font_size)
+    chars, colors = frame_to_ascii(
+        frame, width, height, char_set, color_mode,
+        intensity, mono_color, brightness,
+    )
+    html = frame_to_html(chars, colors, font_size, bg_color)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
