@@ -15,3 +15,4 @@ venv/
 # Tests & caches (local only)
 tests/
 .pytest_cache/
+skill-observations/
