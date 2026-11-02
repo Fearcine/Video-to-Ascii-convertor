@@ -2,16 +2,16 @@
 
 ### Luminance Compositing Studio & Layered Glyph VFX Engine
 
-[Platform](https://www.google.com/search?q=https://github.com/Fearcine/Video-to-Ascii-convertor/releases)
-[](https://www.python.org/)
-[](https://opencv.org/)
-[MIT License](https://www.google.com/search?q=https://github.com/Fearcine/Video-to-Ascii-convertor/blob/main/LICENSE)
+
+
+
+
 
 *A real-time desktop studio and headless optical rendering engine that transforms video footage and still imagery into high-luminance, full-color typographic artworks, emissive glyph fields, and bloom-graded motion sequences.*
 
 
 
-*Layered Glyph VFX Mode ("Scattered Lumina") — Poisson-disk glyph instances aligned to image gradient tangents, selective subject masking, multi-scale emissive stroke bloom, and temporal wind sway over graded night footage. [View Full-Palette GIF](https://www.google.com/search?q=assets/demo-scatter.gif) · [View Native 30 FPS MP4](https://www.google.com/search?q=assets/demo-scatter.mp4)*
+*Layered Glyph VFX Mode ("Scattered Lumina") — Poisson-disk glyph instances aligned to image gradient tangents, selective subject masking, multi-scale emissive stroke bloom, and temporal wind sway over graded night footage.*
 
 ## I. The Optical Problem & The Studio Upgrade
 
@@ -27,10 +27,10 @@ This release introduces a decoupled, five-stage **ASCII Magic Studio & Layered G
 
 ## II. Motion Exhibition: Source Footage vs. Layered Glyph VFX
 
-| Original Source Sequence (`assets/demo.mp4`) | Layered Glyph VFX Output (`assets/demo-scatter.mp4`) |
+| Original Source Sequence | Layered Glyph VFX Output |
 | :---: | :---: |
 |  |  |
-| *Raw 30 FPS multi-scene night portrait sequence ([View MP4](https://www.google.com/search?q=assets/demo.mp4))* | *Poisson-disk scattered glyphs, gradient-tangent rotation, smoothstep density thinning, and emissive bloom ([View MP4](https://www.google.com/search?q=assets/demo-scatter.mp4))* |
+| *Raw 30 FPS multi-scene night portrait sequence* | *Poisson-disk scattered glyphs, gradient-tangent rotation, smoothstep density thinning, and emissive bloom* |
 
 ## III. Visual Studies: Source vs. Studio Output
 
@@ -40,7 +40,7 @@ Each study below pairs the unedited source image from `assets/` directly against
 
 By setting the detection filter to `Salient Object` and desaturating both the backdrop and character layer (`0%` saturation), the engine isolates the foreground painter and skeletal figure from Arnold Böcklin's *Self-Portrait with Death Playing the Fiddle* (1872). The upper canvas void remains completely free of character noise while facial structure and bone contours are sculpted in high-contrast monochrome glyphs (`268%` Luminosity, `63%` Hot-White Core, `Screen` blend).
 
-| Source Artwork (`demo-painting.png`) | ASCII Magic Studio Output & Parameters (`demo-painting-exp.png`) |
+| Source Artwork | ASCII Magic Studio Output & Parameters |
 | :---: | :---: |
 |  |  |
 
@@ -50,7 +50,7 @@ By setting the detection filter to `Salient Object` and desaturating both the ba
 
 Night endurance racing photography presents extreme dynamic range: dark asphalt, specular carbon-fiber reflections, tungsten pit lighting, and aerial fireworks. Using `Color Dodge` blending over a softly blurred backdrop with `99%` Per-Character Bloom (`18px` glow radius) and `40%` Scene Bloom transforms the fireworks, headlights, and red-and-white livery into self-luminous typographic structures.
 
-| Source Photograph (`demo-nascar.png`) | ASCII Magic Studio Output & Parameters (`demo-nascar-exp.png`) |
+| Source Photograph | ASCII Magic Studio Output & Parameters |
 | :---: | :---: |
 |  |  |
 
@@ -58,9 +58,9 @@ Night endurance racing photography presents extreme dynamic range: dark asphalt,
 
 ### Study III — Chromatic Gradient Mapping & Solar Core
 
-Applied to a neon-lit portrait (`demo-ana.png`), the `Solar Flare Gold` recipe blends a `75%` `Solar Gold` gradient map with the source magenta-violet lighting via `Color Dodge`. The `Luminance + Edges` detector suppresses characters in deep hair and background shadows (`Dark Cutoff: 30`) while driving skin and background highlights toward a warm, incandescent gold core.
+Applied to a neon-lit portrait, the `Solar Flare Gold` recipe blends a `75%` `Solar Gold` gradient map with the source magenta-violet lighting via `Color Dodge`. The `Luminance + Edges` detector suppresses characters in deep hair and background shadows (`Dark Cutoff: 30`) while driving skin and background highlights toward a warm, incandescent gold core.
 
-| Source Portrait (`demo-ana.png`) | ASCII Magic Studio Output & Parameters (`demo-ana-ex.png`) |
+| Source Portrait | ASCII Magic Studio Output & Parameters |
 | :---: | :---: |
 |  |  |
 
@@ -250,4 +250,4 @@ python tools/bench_vfx.py
 - **Operating System**: Windows 10 / 11 (64-bit), macOS 12+, or Linux (X11 / Wayland)
 - **Runtime**: Python `3.11+` (`PyQt6 >= 6.6.0`, `opencv-python >= 4.9.0`, `numpy >= 1.26.0`, `Pillow >= 10.2.0`)
 - **Memory**: 8 GB RAM recommended (16 GB recommended for ultra-wide grids above 400 columns)
-- **License**: Released under the [MIT License](https://www.google.com/search?q=LICENSE). Free for personal, academic, and commercial creative production.
+- **License**: Released under the MIT License (`LICENSE`). Free for personal, academic, and commercial creative production.
